@@ -1,0 +1,13 @@
+.DS_Store
+.idea/
+.terraform/
+*.log
+*.test
+*.tfplan
+*.tfstate
+*.tfstate.*
+*.tmp
+*.swp
+bin/
+dist/
+
