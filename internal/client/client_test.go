@@ -5,7 +5,9 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -160,5 +162,42 @@ func TestDoReturnsSafeResponseError(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "sensitive server detail") {
 		t.Fatalf("error exposed response body: %v", err)
+	}
+}
+
+func TestClientDoesNotForwardBearerCredentialAcrossRedirect(t *testing.T) {
+	t.Parallel()
+
+	var targetRequests atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		targetRequests.Add(1)
+	}))
+	defer target.Close()
+
+	origin := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		http.Redirect(writer, request, target.URL+"/capture", http.StatusTemporaryRedirect)
+	}))
+	defer origin.Close()
+
+	implementation, err := New(Config{
+		BaseURL:    origin.URL,
+		Token:      "sensitive-token",
+		HTTPClient: origin.Client(),
+		Retry:      RetryConfig{MaxAttempts: 1},
+	})
+	if err != nil {
+		t.Fatalf("create client: %v", err)
+	}
+	request, err := implementation.NewRequest(context.Background(), http.MethodGet, "api/automation/v1/organization", nil)
+	if err != nil {
+		t.Fatalf("create request: %v", err)
+	}
+	err = implementation.Do(request, nil)
+	var responseErr *ResponseError
+	if !errors.As(err, &responseErr) || responseErr.StatusCode != http.StatusTemporaryRedirect {
+		t.Fatalf("error = %v, want redirect response error", err)
+	}
+	if targetRequests.Load() != 0 {
+		t.Fatal("client followed a redirect carrying an automation credential")
 	}
 }

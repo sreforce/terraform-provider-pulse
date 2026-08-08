@@ -54,7 +54,7 @@ func (c *Client) doWithRetry(request *http.Request, responseBody any) error {
 	var lastErr error
 
 	for attempt := 1; attempt <= c.retry.MaxAttempts; attempt++ {
-		attemptRequest, err := cloneRequest(request)
+		attemptRequest, err := cloneRequest(request, attempt)
 		if err != nil {
 			return err
 		}
@@ -128,12 +128,15 @@ func (c *Client) doWithRetry(request *http.Request, responseBody any) error {
 	return lastErr
 }
 
-func cloneRequest(request *http.Request) (*http.Request, error) {
+func cloneRequest(request *http.Request, attempt int) (*http.Request, error) {
 	clone := request.Clone(request.Context())
 	if request.Body == nil {
 		return clone, nil
 	}
 	if request.GetBody == nil {
+		if attempt == 1 {
+			return request, nil
+		}
 		return nil, errors.New("Pulse API request body cannot be replayed")
 	}
 	body, err := request.GetBody()

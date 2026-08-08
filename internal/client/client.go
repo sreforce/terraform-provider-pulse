@@ -65,7 +65,11 @@ func New(config Config) (*Client, error) {
 
 	httpClient := config.HTTPClient
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: defaultTimeout}
+		httpClient = &http.Client{Timeout: defaultTimeout, CheckRedirect: rejectRedirect}
+	} else if standardClient, ok := httpClient.(*http.Client); ok {
+		clone := *standardClient
+		clone.CheckRedirect = rejectRedirect
+		httpClient = &clone
 	}
 
 	userAgent := config.UserAgent
@@ -85,6 +89,12 @@ func New(config Config) (*Client, error) {
 		httpClient: httpClient,
 		retry:      retry,
 	}, nil
+}
+
+func rejectRedirect(*http.Request, []*http.Request) error {
+	// The automation bearer credential must never be forwarded to a redirect
+	// target. Pulse API endpoints have canonical, non-redirecting paths.
+	return http.ErrUseLastResponse
 }
 
 // NewRequest creates an authenticated request for a relative Pulse API path.
