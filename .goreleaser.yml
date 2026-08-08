@@ -2,10 +2,12 @@ version: 2
 
 before:
   hooks:
-    - go mod tidy
+    - go mod verify
 
 builds:
-  - env:
+  - id: provider
+    main: .
+    env:
       - CGO_ENABLED=0
     mod_timestamp: "{{ .CommitTimestamp }}"
     flags:
@@ -13,24 +15,17 @@ builds:
     ldflags:
       - -s -w -X main.version={{.Version}}
     goos:
-      - freebsd
-      - windows
       - linux
       - darwin
     goarch:
       - amd64
-      - "386"
-      - arm
       - arm64
-    ignore:
-      - goos: darwin
-        goarch: "386"
-      - goos: windows
-        goarch: arm
     binary: "{{ .ProjectName }}_v{{ .Version }}"
 
 archives:
-  - formats:
+  - ids:
+      - provider
+    formats:
       - zip
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
@@ -53,6 +48,9 @@ signs:
       - ${artifact}
 
 release:
+  # The workflow verifies signatures, checksums, and provenance before it
+  # publishes the draft. A failed verification never reaches the Registry.
+  draft: true
   extra_files:
     - glob: terraform-registry-manifest.json
       name_template: "{{ .ProjectName }}_{{ .Version }}_manifest.json"
