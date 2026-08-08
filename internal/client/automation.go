@@ -17,6 +17,12 @@ const automationAPIBasePath = "api/automation/v1"
 func (c *Client) CurrentOrganization(ctx context.Context) (Organization, error) {
 	var result Organization
 	err := c.get(ctx, automationAPIBasePath+"/organization", &result)
+	if err == nil {
+		err = validateOrganization(result)
+	}
+	if err != nil {
+		return Organization{}, err
+	}
 	return result, err
 }
 
@@ -24,6 +30,12 @@ func (c *Client) CurrentOrganization(ctx context.Context) (Organization, error) 
 func (c *Client) ListComponentTypes(ctx context.Context, options ListOptions) (Page[ComponentType], error) {
 	var result Page[ComponentType]
 	err := c.get(ctx, collectionPath("component-types", options), &result)
+	if err == nil {
+		err = validateComponentTypes(result)
+	}
+	if err != nil {
+		return Page[ComponentType]{}, err
+	}
 	return result, err
 }
 
@@ -31,6 +43,12 @@ func (c *Client) ListComponentTypes(ctx context.Context, options ListOptions) (P
 func (c *Client) ListTeams(ctx context.Context, options ListOptions) (Page[Team], error) {
 	var result Page[Team]
 	err := c.get(ctx, collectionPath("teams", options), &result)
+	if err == nil {
+		err = validateTeams(result)
+	}
+	if err != nil {
+		return Page[Team]{}, err
+	}
 	return result, err
 }
 
@@ -38,6 +56,12 @@ func (c *Client) ListTeams(ctx context.Context, options ListOptions) (Page[Team]
 func (c *Client) ListTags(ctx context.Context, options ListOptions) (Page[Tag], error) {
 	var result Page[Tag]
 	err := c.get(ctx, collectionPath("tags", options), &result)
+	if err == nil {
+		err = validateTags(result)
+	}
+	if err != nil {
+		return Page[Tag]{}, err
+	}
 	return result, err
 }
 
@@ -49,6 +73,15 @@ func (c *Client) CreateComponent(ctx context.Context, payload ComponentCreateReq
 		return result, err
 	}
 	err := c.mutate(ctx, http.MethodPost, automationAPIBasePath+"/components", payload, noPrecondition, &result)
+	if err == nil {
+		err = validateComponent(result)
+	}
+	if err == nil && (result.ExternalKey != payload.ExternalKey || result.Kind != payload.Kind) {
+		err = contractError("component create")
+	}
+	if err != nil {
+		return Component{}, err
+	}
 	return result, err
 }
 
@@ -60,6 +93,15 @@ func (c *Client) GetComponent(ctx context.Context, componentID string) (Componen
 		return result, err
 	}
 	err = c.get(ctx, path, &result)
+	if err == nil {
+		err = validateComponent(result)
+	}
+	if err == nil && result.ID != componentID {
+		err = contractError("component read")
+	}
+	if err != nil {
+		return Component{}, err
+	}
 	return result, err
 }
 
@@ -75,6 +117,15 @@ func (c *Client) UpdateComponent(ctx context.Context, componentID string, payloa
 		return result, err
 	}
 	err = c.mutate(ctx, http.MethodPatch, path, payload, precondition, &result)
+	if err == nil {
+		err = validateComponent(result)
+	}
+	if err == nil && result.ID != componentID {
+		err = contractError("component update")
+	}
+	if err != nil {
+		return Component{}, err
+	}
 	return result, err
 }
 
@@ -99,6 +150,12 @@ func (c *Client) GetComponentRollup(ctx context.Context, parentComponentID strin
 		return result, err
 	}
 	err = c.get(ctx, path, &result)
+	if err == nil {
+		err = validateRollup(result, parentComponentID)
+	}
+	if err != nil {
+		return ComponentRollup{}, err
+	}
 	return result, err
 }
 
@@ -115,6 +172,12 @@ func (c *Client) ReplaceComponentRollup(ctx context.Context, parentComponentID s
 		return result, err
 	}
 	err = c.mutate(ctx, http.MethodPut, path, payload, precondition, &result)
+	if err == nil {
+		err = validateRollup(result, parentComponentID)
+	}
+	if err != nil {
+		return ComponentRollup{}, err
+	}
 	return result, err
 }
 
@@ -139,6 +202,12 @@ func (c *Client) GetComponentIntegration(ctx context.Context, componentID string
 		return result, err
 	}
 	err = c.get(ctx, path, &result)
+	if err == nil {
+		err = validateIntegration(result, componentID)
+	}
+	if err != nil {
+		return ComponentIntegration{}, err
+	}
 	return result, err
 }
 
@@ -154,6 +223,15 @@ func (c *Client) CreateComponentIntegration(ctx context.Context, componentID str
 		return result, err
 	}
 	err = c.mutate(ctx, http.MethodPost, path, payload, noPrecondition, &result)
+	if err == nil {
+		err = validateIntegrationMutation(result, componentID)
+	}
+	if err == nil && (result.Integration.Source != payload.Source || result.Integration.SourceKey != payload.SourceKey) {
+		err = contractError("component integration create")
+	}
+	if err != nil {
+		result = ComponentIntegrationMutation{}
+	}
 	return result, err
 }
 
@@ -198,6 +276,12 @@ func (c *Client) mutateIntegrationAction(ctx context.Context, componentID string
 		return result, err
 	}
 	err = c.mutate(ctx, http.MethodPost, path, payload, precondition, &result)
+	if err == nil {
+		err = validateIntegrationMutation(result, componentID)
+	}
+	if err != nil {
+		result = ComponentIntegrationMutation{}
+	}
 	return result, err
 }
 

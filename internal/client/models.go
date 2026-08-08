@@ -2,6 +2,10 @@ package client
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"time"
 )
 
@@ -68,6 +72,24 @@ type ListOptions struct {
 type Page[T any] struct {
 	Items      []T    `json:"items"`
 	NextCursor string `json:"next_cursor"`
+}
+
+// UnmarshalJSON rejects missing or null collection fields instead of treating a
+// malformed/legacy envelope as a valid terminal empty page.
+func (p *Page[T]) UnmarshalJSON(data []byte) error {
+	var wire struct {
+		Items      *[]T    `json:"items"`
+		NextCursor *string `json:"next_cursor"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	if wire.Items == nil || wire.NextCursor == nil {
+		return errors.New("Pulse collection response is missing required fields")
+	}
+	p.Items = *wire.Items
+	p.NextCursor = *wire.NextCursor
+	return nil
 }
 
 // Component contains desired configuration plus computed runtime state.
@@ -176,10 +198,16 @@ type ComponentIntegration struct {
 }
 
 // ComponentIntegrationSecret is returned once on issue, rotation, or adoption.
-// No String method is provided so formatting does not accidentally reveal it.
+// Its formatter redacts both the plaintext and version in diagnostics.
 type ComponentIntegrationSecret struct {
 	Value     string `json:"value"`
 	VersionID string `json:"version_id"`
+}
+
+// Format redacts the one-time plaintext for every fmt verb, including nested
+// `%+v` and `%#v` formatting of ComponentIntegrationMutation.
+func (ComponentIntegrationSecret) Format(state fmt.State, _ rune) {
+	_, _ = io.WriteString(state, "<sensitive>")
 }
 
 // ComponentIntegrationMutation contains metadata and an optional one-time secret.
