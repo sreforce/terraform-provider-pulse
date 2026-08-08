@@ -1,0 +1,15 @@
+{
+  "id": "00000000-0000-4000-8000-000000000101",
+  "external_key": "main-net/core/citrea-sequencer",
+  "kind": "external",
+  "name": "Sequencer",
+  "component_type_id": "00000000-0000-4000-8000-000000000201",
+  "owner_team_id": null,
+  "relevance_tag_ids": [],
+  "filter_tag_ids": [],
+  "alert_enabled": false,
+  "state": "unknown",
+  "state_reason": "No signal received yet.",
+  "revision": 7,
+  "archived_at": null
+}

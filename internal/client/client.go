@@ -14,8 +14,7 @@ import (
 )
 
 const (
-	defaultTimeout       = 30 * time.Second
-	maxErrorResponseBody = 64 * 1024
+	defaultTimeout = 30 * time.Second
 )
 
 // HTTPDoer is the subset of http.Client used by the Pulse client.
@@ -35,6 +34,7 @@ type Config struct {
 	Token      string
 	UserAgent  string
 	HTTPClient HTTPDoer
+	Retry      RetryConfig
 }
 
 // Client is an authenticated Pulse HTTP client.
@@ -43,17 +43,7 @@ type Client struct {
 	token      string
 	userAgent  string
 	httpClient HTTPDoer
-}
-
-// ResponseError describes a non-success HTTP response. Error intentionally omits
-// the response body so server output cannot leak into Terraform diagnostics.
-type ResponseError struct {
-	StatusCode int
-	Body       []byte
-}
-
-func (e *ResponseError) Error() string {
-	return fmt.Sprintf("Pulse API returned HTTP status %d", e.StatusCode)
+	retry      RetryConfig
 }
 
 // New validates configuration and returns an authenticated client.
@@ -83,11 +73,17 @@ func New(config Config) (*Client, error) {
 		userAgent = "terraform-provider-pulse/dev"
 	}
 
+	retry, err := normalizeRetryConfig(config.Retry)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Client{
 		baseURL:    baseURL,
 		token:      config.Token,
 		userAgent:  userAgent,
 		httpClient: httpClient,
+		retry:      retry,
 	}, nil
 }
 
@@ -124,31 +120,11 @@ func (c *Client) NewRequest(ctx context.Context, method, relativePath string, bo
 	return request, nil
 }
 
-// Do sends a request and optionally decodes a successful JSON response.
+// Do sends a request and optionally decodes a successful JSON response. It may
+// retry read-only requests and mutations carrying an Idempotency-Key. Mutation
+// callers must not rely on HTTP method semantics alone for replay safety.
 func (c *Client) Do(request *http.Request, responseBody any) error {
-	response, err := c.httpClient.Do(request)
-	if err != nil {
-		return fmt.Errorf("send Pulse API request: %w", err)
-	}
-	defer response.Body.Close()
-
-	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		body, readErr := io.ReadAll(io.LimitReader(response.Body, maxErrorResponseBody))
-		if readErr != nil {
-			return fmt.Errorf("read Pulse API error response: %w", readErr)
-		}
-		return &ResponseError{StatusCode: response.StatusCode, Body: body}
-	}
-
-	if responseBody == nil || response.StatusCode == http.StatusNoContent {
-		return nil
-	}
-
-	if err := json.NewDecoder(response.Body).Decode(responseBody); err != nil {
-		return fmt.Errorf("decode Pulse API response: %w", err)
-	}
-
-	return nil
+	return c.doWithRetry(request, responseBody)
 }
 
 func parseBaseURL(raw string) (*url.URL, error) {
