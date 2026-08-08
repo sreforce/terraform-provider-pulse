@@ -99,7 +99,7 @@ func validRollupEffect(value RollupEffect) bool {
 	return value == RollupEffectNone || value == RollupEffectYellow || value == RollupEffectRed
 }
 
-func validateIntegration(value ComponentIntegration, expectedComponentID string) error {
+func validateIntegration(value ComponentIntegration, expectedComponentID string, allowInsecureHTTP bool) error {
 	if value.ID == "" || value.ComponentID != expectedComponentID || value.Source != IntegrationSourceGrafana || value.SourceKey == "" || value.CredentialVersionID == "" || value.Revision <= 0 || value.ArchivedAt != nil {
 		return contractError("component integration")
 	}
@@ -113,6 +113,9 @@ func validateIntegration(value ComponentIntegration, expectedComponentID string)
 	if err != nil || (endpoint.Scheme != "http" && endpoint.Scheme != "https") || endpoint.Host == "" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" {
 		return contractError("component integration")
 	}
+	if endpoint.Scheme == "http" && (!allowInsecureHTTP || !isLoopbackHost(endpoint.Hostname())) {
+		return contractError("component integration")
+	}
 	expectedSuffix := "/webhooks/component-integrations/" + value.ID + "/grafana"
 	if !strings.HasSuffix(endpoint.Path, expectedSuffix) {
 		return contractError("component integration")
@@ -120,8 +123,8 @@ func validateIntegration(value ComponentIntegration, expectedComponentID string)
 	return nil
 }
 
-func validateIntegrationMutation(value ComponentIntegrationMutation, expectedComponentID string) error {
-	if err := validateIntegration(value.Integration, expectedComponentID); err != nil {
+func validateIntegrationMutation(value ComponentIntegrationMutation, expectedComponentID string, allowInsecureHTTP bool) error {
+	if err := validateIntegration(value.Integration, expectedComponentID, allowInsecureHTTP); err != nil {
 		return err
 	}
 	if value.Integration.LifecycleOwner != IntegrationLifecycleOwnerAutomation || value.Secret == nil {

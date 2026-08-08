@@ -203,7 +203,7 @@ func (c *Client) GetComponentIntegration(ctx context.Context, componentID string
 	}
 	err = c.get(ctx, path, &result)
 	if err == nil {
-		err = validateIntegration(result, componentID)
+		err = validateIntegration(result, componentID, c.allowInsecureHTTP)
 	}
 	if err != nil {
 		return ComponentIntegration{}, err
@@ -224,7 +224,7 @@ func (c *Client) CreateComponentIntegration(ctx context.Context, componentID str
 	}
 	err = c.mutate(ctx, http.MethodPost, path, payload, noPrecondition, &result)
 	if err == nil {
-		err = validateIntegrationMutation(result, componentID)
+		err = validateIntegrationMutation(result, componentID, c.allowInsecureHTTP)
 	}
 	if err == nil && (result.Integration.Source != payload.Source || result.Integration.SourceKey != payload.SourceKey) {
 		err = contractError("component integration create")
@@ -277,7 +277,7 @@ func (c *Client) mutateIntegrationAction(ctx context.Context, componentID string
 	}
 	err = c.mutate(ctx, http.MethodPost, path, payload, precondition, &result)
 	if err == nil {
-		err = validateIntegrationMutation(result, componentID)
+		err = validateIntegrationMutation(result, componentID, c.allowInsecureHTTP)
 	}
 	if err != nil {
 		result = ComponentIntegrationMutation{}

@@ -300,6 +300,44 @@ func TestComponentIntegrationModifyPlanRejectsSourceKeyChangeOnSameLeaf(t *testi
 	}
 }
 
+func TestComponentIntegrationModifyPlanRejectsHumanOwnedDestroy(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	implementation := &componentIntegrationResource{}
+	schemaValue := componentIntegrationTestSchema(t, implementation)
+	state := componentIntegrationTestModel()
+	state.ID = types.StringValue(testIntegrationID)
+	state.Endpoint = types.StringValue("https://pulse.example.test/webhooks/component-integrations/" + testIntegrationID + "/grafana")
+	state.Secret = types.StringValue("stored-secret")
+	state.ObservedVersion = types.StringValue(testIntegrationVersionOne)
+	state.RotationRequired = types.BoolValue(false)
+	state.LifecycleOwner = types.StringValue("human")
+	state.Revision = types.Int64Value(3)
+	state.Status = types.StringValue("active")
+	nullPlan := tfsdk.Plan{
+		Schema: schemaValue,
+		Raw:    tftypes.NewValue(schemaValue.Type().TerraformType(ctx), nil),
+	}
+	response := resource.ModifyPlanResponse{Plan: nullPlan}
+	implementation.ModifyPlan(ctx, resource.ModifyPlanRequest{
+		State: componentIntegrationTestState(t, schemaValue, state),
+		Plan:  nullPlan,
+	}, &response)
+	if !response.Diagnostics.HasError() {
+		t.Fatal("human-owned integration destroy must require a completed adoption")
+	}
+
+	state.LifecycleOwner = types.StringValue("automation")
+	allowed := resource.ModifyPlanResponse{Plan: nullPlan}
+	implementation.ModifyPlan(ctx, resource.ModifyPlanRequest{
+		State: componentIntegrationTestState(t, schemaValue, state),
+		Plan:  nullPlan,
+	}, &allowed)
+	if allowed.Diagnostics.HasError() {
+		t.Fatalf("automation-owned integration destroy diagnostics: %v", allowed.Diagnostics)
+	}
+}
+
 func TestComponentIntegrationUpdateRotatesAndUsesCurrentRevision(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -468,6 +506,37 @@ func TestComponentIntegrationDeleteArchivesWithRevision(t *testing.T) {
 	}
 	if got, want := captured.Revision, int64(12); got != want {
 		t.Fatalf("archive revision = %d, want %d", got, want)
+	}
+}
+
+func TestComponentIntegrationDeleteRejectsHumanOwnedIntegration(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	current := componentIntegrationTestModel()
+	current.ID = types.StringValue(testIntegrationID)
+	current.Endpoint = types.StringValue("https://pulse.example.test/webhooks/component-integrations/" + testIntegrationID + "/grafana")
+	current.Secret = types.StringValue("stored-secret")
+	current.ObservedVersion = types.StringValue(testIntegrationVersionOne)
+	current.RotationRequired = types.BoolValue(false)
+	current.LifecycleOwner = types.StringValue("human")
+	current.Revision = types.Int64Value(12)
+	current.Status = types.StringValue("active")
+
+	deleteCalled := false
+	implementation := &componentIntegrationResource{api: &fakeIntegrationAPI{
+		delete: func(context.Context, string, client.MutationOptions) error {
+			deleteCalled = true
+			return nil
+		},
+	}}
+	schemaValue := componentIntegrationTestSchema(t, implementation)
+	response := resource.DeleteResponse{State: tfsdk.State{Schema: schemaValue}}
+	implementation.Delete(ctx, resource.DeleteRequest{State: componentIntegrationTestState(t, schemaValue, current)}, &response)
+	if !response.Diagnostics.HasError() {
+		t.Fatal("human-owned integration archive must require a completed adoption")
+	}
+	if deleteCalled {
+		t.Fatal("provider attempted to archive a human-owned integration")
 	}
 }
 

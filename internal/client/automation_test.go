@@ -230,10 +230,11 @@ func TestDomainRetryReusesOneIdempotencyKey(t *testing.T) {
 		},
 	)
 	implementation, err := New(Config{
-		BaseURL:    mock.URL(),
-		Token:      testToken,
-		HTTPClient: mock.HTTPClient(),
-		Retry:      RetryConfig{MaxAttempts: 2, MinDelay: time.Nanosecond, MaxDelay: time.Nanosecond},
+		BaseURL:           mock.URL(),
+		Token:             testToken,
+		HTTPClient:        mock.HTTPClient(),
+		Retry:             RetryConfig{MaxAttempts: 2, MinDelay: time.Nanosecond, MaxDelay: time.Nanosecond},
+		AllowInsecureHTTP: true,
 	})
 	if err != nil {
 		t.Fatalf("create client: %v", err)
@@ -295,10 +296,11 @@ func TestMutationOptionsFailClosedBeforeRequest(t *testing.T) {
 func newMockClient(t *testing.T, mock *clienttest.Server) *Client {
 	t.Helper()
 	implementation, err := New(Config{
-		BaseURL:    mock.URL(),
-		Token:      testToken,
-		HTTPClient: mock.HTTPClient(),
-		Retry:      RetryConfig{MaxAttempts: 1},
+		BaseURL:           mock.URL(),
+		Token:             testToken,
+		HTTPClient:        mock.HTTPClient(),
+		Retry:             RetryConfig{MaxAttempts: 1},
+		AllowInsecureHTTP: true,
 	})
 	if err != nil {
 		t.Fatalf("create client: %v", err)

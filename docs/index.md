@@ -29,5 +29,6 @@ provider "pulse" {}
 
 ### Optional
 
+- `allow_insecure_http` (Boolean) Allow plain HTTP only when api_url and returned integration endpoints use a loopback host. Intended exclusively for local development and disabled by default.
 - `api_url` (String) Base URL of the Pulse API. May also be set with `PULSE_API_URL`.
 - `token` (String, Sensitive) Organization-scoped Pulse automation token. May also be set with `PULSE_API_TOKEN`.

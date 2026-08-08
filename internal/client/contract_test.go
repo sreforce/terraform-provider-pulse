@@ -95,6 +95,33 @@ func TestIntegrationMutationRejectsMismatchedSecretVersionWithoutLeaking(t *test
 	}
 }
 
+func TestIntegrationEndpointRequiresEncryptedTransport(t *testing.T) {
+	t.Parallel()
+
+	integration := ComponentIntegration{
+		ID:                  "00000000-0000-4000-8000-000000000301",
+		ComponentID:         testComponentID,
+		Source:              IntegrationSourceGrafana,
+		SourceKey:           "sequencer-commitment",
+		Endpoint:            "http://pulse.example.com/webhooks/component-integrations/00000000-0000-4000-8000-000000000301/grafana",
+		LifecycleOwner:      IntegrationLifecycleOwnerAutomation,
+		Status:              IntegrationStatusActive,
+		CredentialVersionID: "00000000-0000-4000-8000-000000000401",
+		Revision:            1,
+	}
+	if err := validateIntegration(integration, testComponentID, true); !IsContractError(err) {
+		t.Fatalf("remote plaintext integration endpoint error = %v, want contract error", err)
+	}
+
+	integration.Endpoint = "http://127.0.0.1:8080/webhooks/component-integrations/00000000-0000-4000-8000-000000000301/grafana"
+	if err := validateIntegration(integration, testComponentID, false); !IsContractError(err) {
+		t.Fatalf("unapproved loopback endpoint error = %v, want contract error", err)
+	}
+	if err := validateIntegration(integration, testComponentID, true); err != nil {
+		t.Fatalf("explicit loopback development endpoint was rejected: %v", err)
+	}
+}
+
 func TestLostIntegrationSecretRecoverySequence(t *testing.T) {
 	t.Parallel()
 
@@ -145,10 +172,11 @@ func TestLostIntegrationSecretRecoverySequence(t *testing.T) {
 		},
 	)
 	implementation, err := New(Config{
-		BaseURL:    mock.URL(),
-		Token:      testToken,
-		HTTPClient: mock.HTTPClient(),
-		Retry:      RetryConfig{MaxAttempts: 2, MinDelay: time.Nanosecond, MaxDelay: time.Nanosecond},
+		BaseURL:           mock.URL(),
+		Token:             testToken,
+		HTTPClient:        mock.HTTPClient(),
+		Retry:             RetryConfig{MaxAttempts: 2, MinDelay: time.Nanosecond, MaxDelay: time.Nanosecond},
+		AllowInsecureHTTP: true,
 	})
 	if err != nil {
 		t.Fatalf("create client: %v", err)

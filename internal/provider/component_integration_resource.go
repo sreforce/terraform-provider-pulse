@@ -225,7 +225,22 @@ func (r *componentIntegrationResource) ValidateConfig(ctx context.Context, reque
 
 func (r *componentIntegrationResource) ModifyPlan(ctx context.Context, request resource.ModifyPlanRequest, response *resource.ModifyPlanResponse) {
 	response.Plan = request.Plan
-	if request.State.Raw.IsNull() || request.Plan.Raw.IsNull() {
+	if request.State.Raw.IsNull() {
+		return
+	}
+	if request.Plan.Raw.IsNull() {
+		var state componentIntegrationResourceModel
+		response.Diagnostics.Append(request.State.Get(ctx, &state)...)
+		if response.Diagnostics.HasError() {
+			return
+		}
+		if state.LifecycleOwner.IsNull() || state.LifecycleOwner.IsUnknown() || state.LifecycleOwner.ValueString() != "automation" {
+			response.Diagnostics.AddAttributeError(
+				path.Root("lifecycle_owner"),
+				"Explicit integration adoption required before destroy",
+				"Terraform can destroy only an automation-owned integration. Set adopt = true and apply the ownership transfer before planning this destroy.",
+			)
+		}
 		return
 	}
 
@@ -475,6 +490,14 @@ func (r *componentIntegrationResource) Delete(ctx context.Context, request resou
 	var state componentIntegrationResourceModel
 	response.Diagnostics.Append(request.State.Get(ctx, &state)...)
 	if response.Diagnostics.HasError() {
+		return
+	}
+	if state.LifecycleOwner.IsNull() || state.LifecycleOwner.IsUnknown() || state.LifecycleOwner.ValueString() != "automation" {
+		response.Diagnostics.AddAttributeError(
+			path.Root("lifecycle_owner"),
+			"Explicit integration adoption required before archive",
+			"Terraform can archive only an automation-owned integration. Set adopt = true and apply the ownership transfer before destroying this resource.",
+		)
 		return
 	}
 

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -30,25 +31,27 @@ type API interface {
 
 // Config configures a Pulse API client without selecting any API endpoint paths.
 type Config struct {
-	BaseURL    string
-	Token      string
-	UserAgent  string
-	HTTPClient HTTPDoer
-	Retry      RetryConfig
+	BaseURL           string
+	Token             string
+	UserAgent         string
+	HTTPClient        HTTPDoer
+	Retry             RetryConfig
+	AllowInsecureHTTP bool
 }
 
 // Client is an authenticated Pulse HTTP client.
 type Client struct {
-	baseURL    *url.URL
-	token      string
-	userAgent  string
-	httpClient HTTPDoer
-	retry      RetryConfig
+	baseURL           *url.URL
+	token             string
+	userAgent         string
+	httpClient        HTTPDoer
+	retry             RetryConfig
+	allowInsecureHTTP bool
 }
 
 // New validates configuration and returns an authenticated client.
 func New(config Config) (*Client, error) {
-	baseURL, err := parseBaseURL(config.BaseURL)
+	baseURL, err := parseBaseURL(config.BaseURL, config.AllowInsecureHTTP)
 	if err != nil {
 		return nil, err
 	}
@@ -83,11 +86,12 @@ func New(config Config) (*Client, error) {
 	}
 
 	return &Client{
-		baseURL:    baseURL,
-		token:      config.Token,
-		userAgent:  userAgent,
-		httpClient: httpClient,
-		retry:      retry,
+		baseURL:           baseURL,
+		token:             config.Token,
+		userAgent:         userAgent,
+		httpClient:        httpClient,
+		retry:             retry,
+		allowInsecureHTTP: config.AllowInsecureHTTP,
 	}, nil
 }
 
@@ -137,7 +141,7 @@ func (c *Client) Do(request *http.Request, responseBody any) error {
 	return c.doWithRetry(request, responseBody)
 }
 
-func parseBaseURL(raw string) (*url.URL, error) {
+func parseBaseURL(raw string, allowInsecureHTTP bool) (*url.URL, error) {
 	if raw == "" || strings.TrimSpace(raw) == "" {
 		return nil, errors.New("pulse API URL must not be empty")
 	}
@@ -150,7 +154,7 @@ func parseBaseURL(raw string) (*url.URL, error) {
 		return nil, fmt.Errorf("parse Pulse API URL: %w", err)
 	}
 	if parsed.Scheme != "https" && parsed.Scheme != "http" {
-		return nil, errors.New("pulse API URL scheme must be http or https")
+		return nil, errors.New("pulse API URL scheme must be https")
 	}
 	if parsed.Host == "" {
 		return nil, errors.New("pulse API URL must include a host")
@@ -161,9 +165,20 @@ func parseBaseURL(raw string) (*url.URL, error) {
 	if parsed.RawQuery != "" || parsed.Fragment != "" {
 		return nil, errors.New("pulse API URL must not include a query string or fragment")
 	}
+	if parsed.Scheme == "http" && (!allowInsecureHTTP || !isLoopbackHost(parsed.Hostname())) {
+		return nil, errors.New("pulse API URL must use https; insecure HTTP is permitted only for an explicitly enabled loopback development endpoint")
+	}
 
 	parsed.Path = strings.TrimRight(parsed.Path, "/") + "/"
 	return parsed, nil
+}
+
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	address := net.ParseIP(host)
+	return address != nil && address.IsLoopback()
 }
 
 func parseRelativeReference(raw string) (*url.URL, error) {
