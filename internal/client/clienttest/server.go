@@ -17,15 +17,16 @@ const maxRecordedRequestBody = 1024 * 1024
 
 // Expectation describes one request and its deterministic response.
 type Expectation struct {
-	Method         string
-	RequestURI     string
-	IdempotencyKey string
-	IfMatch        string
-	IfNoneMatch    string
-	RequestBody    []byte
-	StatusCode     int
-	ResponseHeader http.Header
-	ResponseBody   []byte
+	Method                string
+	RequestURI            string
+	IdempotencyKey        string
+	RequireIdempotencyKey bool
+	IfMatch               string
+	IfNoneMatch           string
+	RequestBody           []byte
+	StatusCode            int
+	ResponseHeader        http.Header
+	ResponseBody          []byte
 }
 
 // RecordedRequest captures non-secret request details useful in assertions.
@@ -124,7 +125,13 @@ func (s *Server) serveHTTP(writer http.ResponseWriter, request *http.Request) {
 	}
 	compareString(s.t, "method", request.Method, expectation.Method)
 	compareString(s.t, "request URI", request.URL.RequestURI(), expectation.RequestURI)
-	compareString(s.t, "Idempotency-Key", request.Header.Get("Idempotency-Key"), expectation.IdempotencyKey)
+	if expectation.RequireIdempotencyKey {
+		if !isUUID(request.Header.Get("Idempotency-Key")) {
+			s.t.Errorf("Pulse mock Idempotency-Key was not a UUID")
+		}
+	} else {
+		compareString(s.t, "Idempotency-Key", request.Header.Get("Idempotency-Key"), expectation.IdempotencyKey)
+	}
 	compareString(s.t, "If-Match", request.Header.Get("If-Match"), expectation.IfMatch)
 	compareString(s.t, "If-None-Match", request.Header.Get("If-None-Match"), expectation.IfNoneMatch)
 	if expectation.RequestBody != nil && !bytes.Equal(body, expectation.RequestBody) {
@@ -158,4 +165,19 @@ func printableJSON(value []byte) string {
 		return fmt.Sprintf("<%d bytes>", len(value))
 	}
 	return string(value)
+}
+
+func isUUID(value string) bool {
+	if len(value) != 36 || value[8] != '-' || value[13] != '-' || value[18] != '-' || value[23] != '-' {
+		return false
+	}
+	for index, character := range value {
+		if index == 8 || index == 13 || index == 18 || index == 23 {
+			continue
+		}
+		if !((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f')) {
+			return false
+		}
+	}
+	return value[14] == '4' && (value[19] == '8' || value[19] == '9' || value[19] == 'a' || value[19] == 'b')
 }

@@ -1,7 +1,7 @@
 package clienttest
 
 import (
-	"io"
+	"bytes"
 	"net/http"
 	"testing"
 )
@@ -19,11 +19,10 @@ func TestServerMatchesRequestsWithoutRecordingAuthorization(t *testing.T) {
 		ResponseBody:   Fixture(t, "component.json"),
 	})
 
-	request, err := http.NewRequest(http.MethodPatch, mock.URL()+"/api/automation/v1/components/component-id", io.NopCloser(nil))
+	request, err := http.NewRequest(http.MethodPatch, mock.URL()+"/api/automation/v1/components/component-id", bytes.NewReader([]byte(`{"name":"Sequencer"}`)))
 	if err != nil {
 		t.Fatalf("create request: %v", err)
 	}
-	request.Body = io.NopCloser(newBytesReader([]byte(`{"name":"Sequencer"}`)))
 	request.Header.Set("Authorization", "Bearer test-token")
 	request.Header.Set("Idempotency-Key", "operation-id")
 	request.Header.Set("If-Match", "7")
@@ -40,21 +39,4 @@ func TestServerMatchesRequestsWithoutRecordingAuthorization(t *testing.T) {
 	if records[0].RequestURI != "/api/automation/v1/components/component-id" {
 		t.Fatalf("request URI = %q", records[0].RequestURI)
 	}
-}
-
-// bytesReader is kept local so the mock package has no test-only dependencies.
-type bytesReader []byte
-
-func newBytesReader(value []byte) *bytesReader {
-	reader := bytesReader(value)
-	return &reader
-}
-
-func (r *bytesReader) Read(target []byte) (int, error) {
-	if len(*r) == 0 {
-		return 0, io.EOF
-	}
-	count := copy(target, *r)
-	*r = (*r)[count:]
-	return count, nil
 }

@@ -3,6 +3,7 @@
     "id": "00000000-0000-4000-8000-000000000301",
     "component_id": "00000000-0000-4000-8000-000000000101",
     "source": "grafana",
+    "source_key": "sequencer-commitment",
     "endpoint": "https://pulse.example.com/webhooks/component-integrations/00000000-0000-4000-8000-000000000301/grafana",
     "lifecycle_owner": "automation",
     "status": "active",
