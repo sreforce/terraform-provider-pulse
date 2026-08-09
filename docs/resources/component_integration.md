@@ -17,7 +17,9 @@ integrations.
 
 `source_key` is the immutable identity of one reviewed Grafana mapping. To use
 another key, create another external alert-leaf component and bind the new
-integration there; do not rename a key on an existing leaf.
+integration there; do not rename a key on an existing leaf. Hierarchical keys
+such as `main-net/core/citrea-sequencer/grafana-ff1fyn5ah9vcwe` are supported;
+the exact value must match the Grafana rule's `pulse_alert_key` label.
 
 Pulse reveals `secret` only when the integration is created, rotated, or
 adopted. Terraform necessarily retains that value in state so it can configure
@@ -32,7 +34,7 @@ is suspected.
 resource "pulse_component_integration" "sequencer_commitment" {
   component_id     = pulse_component.sequencer_commitment.id
   source           = "grafana"
-  source_key       = "sequencer-commitment"
+  source_key       = "main-net/core/citrea-sequencer/grafana-ff1fyn5ah9vcwe"
   rotation_trigger = "2026-08-initial"
 }
 ```
@@ -67,7 +69,7 @@ destroy from bypassing the ownership transfer and credential rotation.
 - `component_id` (String) UUID of the external Pulse component receiving this integration. Rollup components cannot receive integrations.
 - `rotation_trigger` (String) Non-secret caller-controlled value. Changing it rotates the component-bound ingestion credential.
 - `source` (String) Integration source. Version 0.1 supports only `grafana`.
-- `source_key` (String) Immutable Grafana mapping identity expected in the `pulse_alert_key` payload field.
+- `source_key` (String) Immutable Grafana mapping identity expected in the `pulse_alert_key` payload field. It accepts up to 128 lowercase hierarchy characters matching `^[a-z0-9][a-z0-9._:/-]{0,127}$`.
 
 ### Optional
 

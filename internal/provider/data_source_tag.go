@@ -18,6 +18,7 @@ type tagDataSourceModel struct {
 	Name         types.String `tfsdk:"name"`
 	Purpose      types.String `tfsdk:"purpose"`
 	DisplayLabel types.String `tfsdk:"display_label"`
+	DisplayOrder types.Int64  `tfsdk:"display_order"`
 	Icon         types.String `tfsdk:"icon"`
 }
 
@@ -58,6 +59,10 @@ func (d *tagDataSource) Schema(
 			},
 			"display_label": schema.StringAttribute{
 				MarkdownDescription: "Optional human-readable tag label.",
+				Computed:            true,
+			},
+			"display_order": schema.Int64Attribute{
+				MarkdownDescription: "Organization-defined display order for this tag.",
 				Computed:            true,
 			},
 			"icon": schema.StringAttribute{
@@ -130,6 +135,7 @@ func (d *tagDataSource) Read(
 	data.Name = types.StringValue(item.Name)
 	data.Purpose = types.StringValue(item.Purpose)
 	data.DisplayLabel = stringValueOrNull(item.DisplayLabel)
+	data.DisplayOrder = types.Int64Value(item.DisplayOrder)
 	data.Icon = stringValueOrNull(item.Icon)
 	response.Diagnostics.Append(response.State.Set(ctx, &data)...)
 }

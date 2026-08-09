@@ -17,7 +17,9 @@ integrations.
 
 `source_key` is the immutable identity of one reviewed Grafana mapping. To use
 another key, create another external alert-leaf component and bind the new
-integration there; do not rename a key on an existing leaf.
+integration there; do not rename a key on an existing leaf. Hierarchical keys
+such as `main-net/core/citrea-sequencer/grafana-ff1fyn5ah9vcwe` are supported;
+the exact value must match the Grafana rule's `pulse_alert_key` label.
 
 Pulse reveals `secret` only when the integration is created, rotated, or
 adopted. Terraform necessarily retains that value in state so it can configure

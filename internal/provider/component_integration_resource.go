@@ -85,7 +85,7 @@ func (r *componentIntegrationResource) Schema(_ context.Context, _ resource.Sche
 				},
 			},
 			"source_key": schema.StringAttribute{
-				MarkdownDescription: "Immutable Grafana mapping identity expected in the `pulse_alert_key` payload field.",
+				MarkdownDescription: "Immutable Grafana mapping identity expected in the `pulse_alert_key` payload field. It accepts up to 128 lowercase hierarchy characters matching `^[a-z0-9][a-z0-9._:/-]{0,127}$`.",
 				Required:            true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),

@@ -190,7 +190,7 @@ func TestTagDataSourceUsesPurposeAndNameTogether(t *testing.T) {
 	configuredClient := &fakeDataSourceClient{
 		tagPages: map[string]client.Page[client.Tag]{
 			"": {Items: []client.Tag{
-				{ID: "tag-filter", Name: "network", Purpose: "filter", DisplayLabel: &displayLabel},
+				{ID: "tag-filter", Name: "network", Purpose: "filter", DisplayLabel: &displayLabel, DisplayOrder: 7},
 				{ID: "tag-relevance", Name: "network", Purpose: "relevance"},
 			}},
 		},
@@ -215,6 +215,9 @@ func TestTagDataSourceUsesPurposeAndNameTogether(t *testing.T) {
 	}
 	if got, want := state.DisplayLabel.ValueString(), "Network"; got != want {
 		t.Fatalf("display label = %q, want %q", got, want)
+	}
+	if got, want := state.DisplayOrder.ValueInt64(), int64(7); got != want {
+		t.Fatalf("display order = %d, want %d", got, want)
 	}
 }
 
