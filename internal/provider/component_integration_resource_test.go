@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -88,6 +89,32 @@ func TestComponentIntegrationResourceSchemaProtectsOneTimeSecret(t *testing.T) {
 	rotationRequired, ok := response.Schema.Attributes["rotation_required"].(resourceschema.BoolAttribute)
 	if !ok || !rotationRequired.Computed {
 		t.Fatalf("rotation_required schema = %#v, want computed boolean", response.Schema.Attributes["rotation_required"])
+	}
+}
+
+func TestComponentIntegrationSourceKeySupportsStableHierarchyPaths(t *testing.T) {
+	t.Parallel()
+
+	valid := []string{
+		"main-net/core/citrea-sequencer/sequencer-stopped",
+		"grafana:sequencer_stopped.v2",
+	}
+	for _, sourceKey := range valid {
+		if !sourceKeyPattern.MatchString(sourceKey) {
+			t.Fatalf("sourceKeyPattern rejected valid key %q", sourceKey)
+		}
+	}
+
+	invalid := []string{
+		"Main-Net/core/sequencer",
+		"/main-net/core/sequencer",
+		"main net/core/sequencer",
+		strings.Repeat("a", 129),
+	}
+	for _, sourceKey := range invalid {
+		if sourceKeyPattern.MatchString(sourceKey) {
+			t.Fatalf("sourceKeyPattern accepted invalid key %q", sourceKey)
+		}
 	}
 }
 

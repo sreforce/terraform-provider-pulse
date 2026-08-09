@@ -26,7 +26,7 @@ const (
 	maxSecretReissueAttempts         = 3
 )
 
-var sourceKeyPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,127}$`)
+var sourceKeyPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._:/-]{0,127}$`)
 
 // componentIntegrationResource manages the one Grafana ingestion binding for
 // an external component. The automation credential configures the binding; the
@@ -196,7 +196,7 @@ func (r *componentIntegrationResource) ValidateConfig(ctx context.Context, reque
 		response.Diagnostics.AddAttributeError(
 			path.Root("source_key"),
 			"Invalid Grafana source key",
-			"source_key must start with a lowercase letter or digit and contain only lowercase letters, digits, dots, underscores, or hyphens (maximum 128 characters).",
+			"source_key must start with a lowercase letter or digit and contain only lowercase letters, digits, dots, underscores, colons, slashes, or hyphens (maximum 128 characters).",
 		)
 	}
 	if !config.RotationTrigger.IsNull() && !config.RotationTrigger.IsUnknown() {
