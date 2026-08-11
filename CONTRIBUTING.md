@@ -12,6 +12,7 @@ make generate
 ```
 
 `make check` formats, builds, vets, and tests the provider. Run `make lint` when `golangci-lint` is installed locally.
+Release-affecting changes must also pass `make release-check` with the GoReleaser version pinned in the release workflow.
 
 ## API contract changes
 
@@ -26,4 +27,3 @@ Provider documentation under `docs/` is generated from provider schemas and exam
 ## Pull requests
 
 Keep changes focused, add tests, describe Pulse API compatibility, and include a safe rollback path. Acceptance tests that create remote objects must be opt-in and must clean up what they create.
-

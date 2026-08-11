@@ -48,11 +48,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development and API compatibility rul
 
 ## Releasing and publishing
 
-Tags in the form `vX.Y.Z` trigger a signed GoReleaser build. Release assets follow the Terraform Registry naming and checksum conventions and include protocol metadata from `terraform-registry-manifest.json`.
+Tags in the form `vX.Y.Z` trigger a signed GoReleaser build. Release assets follow the Terraform Registry naming and checksum conventions, include protocol metadata from `terraform-registry-manifest.json`, and receive GitHub build-provenance attestations before the draft release is published. The first release line includes Linux and macOS builds for both AMD64 and ARM64; Linux ARM64 is the Atlantis runtime target.
 
-Publishing requires repository administrators to configure an RSA or DSA GPG signing key, GitHub Actions secrets, and the `sreforce` namespace in the public Terraform Registry. See [RELEASING.md](RELEASING.md) for the manual prerequisites.
+Publishing requires repository administrators to configure an RSA or DSA GPG signing key, GitHub Actions secrets, repository security settings, and the `sreforce` namespace in the public Terraform Registry. See [RELEASING.md](RELEASING.md) for the manual prerequisites and verification procedure.
 
 ## License
 
 Mozilla Public License 2.0. See [LICENSE](LICENSE).
-

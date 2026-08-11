@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := check
 
-.PHONY: build check fmt generate install lint test vet
+.PHONY: build check fmt generate install lint release-check test verify vet
 
 build:
 	go build -v ./...
@@ -12,6 +12,10 @@ fmt:
 test:
 	go test -race -cover ./...
 
+verify:
+	go mod verify
+	cd tools && go mod verify
+
 vet:
 	go vet ./...
 
@@ -21,8 +25,12 @@ lint:
 generate:
 	cd tools && go generate ./...
 
+release-check:
+	goreleaser check
+	goreleaser release --snapshot --clean --skip=sign
+	./scripts/verify-release-assets.sh dist --allow-unsigned
+
 install:
 	go install -v ./...
 
-check: fmt build vet test
-
+check: fmt verify build vet test

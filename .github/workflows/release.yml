@@ -6,16 +6,72 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  goreleaser:
-    name: Signed provider release
+  validate:
+    name: Validate release package
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Validate semantic version and changelog
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Release tag must be an immutable semantic version beginning with v." >&2
+            exit 1
+          fi
+
+          release_version="${RELEASE_TAG#v}"
+          if ! grep -Fq "## ${release_version} (" CHANGELOG.md; then
+            echo "CHANGELOG.md has no entry for ${release_version}." >&2
+            exit 1
+          fi
+          if grep -Fq "## ${release_version} (Unreleased)" CHANGELOG.md; then
+            echo "Finalize the ${release_version} changelog entry before tagging." >&2
+            exit 1
+          fi
+      - name: Verify provider module
+        run: |
+          go mod verify
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+      - run: go test -race ./...
+      - name: Build Registry package snapshot
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          version: v2.17.1
+          args: release --snapshot --clean --skip=sign
+      - name: Verify package layout and checksums
+        run: scripts/verify-release-assets.sh dist --allow-unsigned
+
+  release:
+    name: Sign, attest, and publish provider release
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -26,11 +82,40 @@ jobs:
         with:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
           passphrase: ${{ secrets.PASSPHRASE }}
+      - name: Verify Terraform Registry-compatible signing key
+        env:
+          GPG_FINGERPRINT: ${{ steps.import_gpg.outputs.fingerprint }}
+        run: |
+          algorithm="$(gpg --batch --with-colons --list-keys "$GPG_FINGERPRINT" | awk -F: '$1 == "pub" { print $4; exit }')"
+          case "$algorithm" in
+            1|2|3|17) ;;
+            *)
+              echo "Terraform Registry signing requires an RSA or DSA primary key." >&2
+              exit 1
+              ;;
+          esac
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
+          version: v2.17.1
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GPG_FINGERPRINT: ${{ steps.import_gpg.outputs.fingerprint }}
-
+      - name: Verify signed release assets
+        id: assets
+        env:
+          EXPECTED_GPG_FINGERPRINT: ${{ steps.import_gpg.outputs.fingerprint }}
+        run: |
+          scripts/verify-release-assets.sh dist
+          checksum_file="$(find dist -maxdepth 1 -type f -name 'terraform-provider-pulse_*_SHA256SUMS' -print -quit)"
+          echo "checksum_file=$checksum_file" >> "$GITHUB_OUTPUT"
+      - name: Attest release asset provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-checksums: ${{ steps.assets.outputs.checksum_file }}
+      - name: Publish verified draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release edit "$RELEASE_TAG" --draft=false --verify-tag
