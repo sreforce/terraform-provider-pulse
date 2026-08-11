@@ -270,10 +270,10 @@ func lookupCatalogItem[T any](
 			break
 		}
 		if page.NextCursor == cursor {
-			return zero, fmt.Errorf("Pulse %s catalog returned the same pagination cursor twice", resource)
+			return zero, fmt.Errorf("pulse %s catalog returned the same pagination cursor twice", resource)
 		}
 		if _, exists := seenCursors[page.NextCursor]; exists {
-			return zero, fmt.Errorf("Pulse %s catalog returned a pagination cursor cycle", resource)
+			return zero, fmt.Errorf("pulse %s catalog returned a pagination cursor cycle", resource)
 		}
 		seenCursors[page.NextCursor] = struct{}{}
 		cursor = page.NextCursor

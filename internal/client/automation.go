@@ -247,7 +247,7 @@ func (c *Client) RotateComponentIntegration(ctx context.Context, componentID str
 // automation and rotates the credential.
 func (c *Client) AdoptComponentIntegration(ctx context.Context, componentID string, options MutationOptions) (ComponentIntegrationMutation, error) {
 	if options.RevokePredecessorImmediately {
-		return ComponentIntegrationMutation{}, errors.New("Pulse adoption controls predecessor revocation server-side")
+		return ComponentIntegrationMutation{}, errors.New("pulse adoption controls predecessor revocation server-side")
 	}
 	return c.mutateIntegrationAction(ctx, componentID, "adopt", options, nil)
 }
@@ -331,31 +331,31 @@ func newIdempotencyKey() (string, error) {
 
 func requireCreateOptions(options MutationOptions) error {
 	if options.Revision != 0 || options.RevokePredecessorImmediately {
-		return errors.New("Pulse create mutation options are invalid")
+		return errors.New("pulse create mutation options are invalid")
 	}
 	return nil
 }
 
 func revisionPrecondition(options MutationOptions) (mutationPrecondition, error) {
 	if options.Revision <= 0 {
-		return mutationPrecondition{}, errors.New("Pulse mutation revision must be greater than zero")
+		return mutationPrecondition{}, errors.New("pulse mutation revision must be greater than zero")
 	}
 	return mutationPrecondition{revision: options.Revision}, nil
 }
 
 func standardRevisionPrecondition(options MutationOptions) (mutationPrecondition, error) {
 	if options.RevokePredecessorImmediately {
-		return mutationPrecondition{}, errors.New("Pulse mutation options are invalid")
+		return mutationPrecondition{}, errors.New("pulse mutation options are invalid")
 	}
 	return revisionPrecondition(options)
 }
 
 func createOrRevisionPrecondition(options MutationOptions) (mutationPrecondition, error) {
 	if options.RevokePredecessorImmediately {
-		return mutationPrecondition{}, errors.New("Pulse rollup mutation options are invalid")
+		return mutationPrecondition{}, errors.New("pulse rollup mutation options are invalid")
 	}
 	if options.Revision < 0 {
-		return mutationPrecondition{}, errors.New("Pulse mutation revision must not be negative")
+		return mutationPrecondition{}, errors.New("pulse mutation revision must not be negative")
 	}
 	if options.Revision == 0 {
 		return mutationPrecondition{createOnly: true}, nil
@@ -381,7 +381,7 @@ func componentSubresourcePath(componentID string, suffix string) (string, error)
 
 func safePathSegment(raw string) (string, error) {
 	if raw == "" || strings.TrimSpace(raw) != raw || len(raw) > 256 || strings.ContainsAny(raw, "\x00\r\n") {
-		return "", errors.New("Pulse resource identifier is invalid")
+		return "", errors.New("pulse resource identifier is invalid")
 	}
 	return url.PathEscape(raw), nil
 }

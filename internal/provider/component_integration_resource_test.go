@@ -121,7 +121,7 @@ func TestComponentIntegrationSourceKeySupportsStableHierarchyPaths(t *testing.T)
 func TestComponentIntegrationCreateRecoversLostOneTimeSecret(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	remote := componentIntegrationTestRemote(testIntegrationVersionTwo, 2, "automation")
+	remote := componentIntegrationTestRemote(testIntegrationVersionTwo, 2)
 	mutation := integrationTestMutation(remote, "new-component-secret")
 
 	var createRequest client.ComponentIntegrationCreateRequest
@@ -184,7 +184,7 @@ func TestComponentIntegrationCreateRecoversLostOneTimeSecret(t *testing.T) {
 func TestComponentIntegrationReadPreservesMatchingSecret(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	remote := componentIntegrationTestRemote(testIntegrationVersionOne, 8, "automation")
+	remote := componentIntegrationTestRemote(testIntegrationVersionOne, 8)
 	current := componentIntegrationTestModel()
 	current.ID = types.StringValue(testIntegrationID)
 	current.Endpoint = types.StringValue(remote.Endpoint)
@@ -222,7 +222,7 @@ func TestComponentIntegrationReadPreservesMatchingSecret(t *testing.T) {
 func TestComponentIntegrationReadMarksOutOfBandVersionForRotation(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	remote := componentIntegrationTestRemote(testIntegrationVersionTwo, 9, "automation")
+	remote := componentIntegrationTestRemote(testIntegrationVersionTwo, 9)
 	current := componentIntegrationTestModel()
 	current.ID = types.StringValue(testIntegrationID)
 	current.Endpoint = types.StringValue(remote.Endpoint)
@@ -385,7 +385,7 @@ func TestComponentIntegrationUpdateRotatesAndUsesCurrentRevision(t *testing.T) {
 	planned.Revision = types.Int64Unknown()
 
 	var captured client.MutationOptions
-	remote := componentIntegrationTestRemote(testIntegrationVersionTwo, 5, "automation")
+	remote := componentIntegrationTestRemote(testIntegrationVersionTwo, 5)
 	implementation := &componentIntegrationResource{api: &fakeIntegrationAPI{
 		rotate: func(_ context.Context, componentID string, options client.MutationOptions) (client.ComponentIntegrationMutation, error) {
 			if componentID != testIntegrationComponentID {
@@ -470,7 +470,7 @@ func TestComponentIntegrationAdoptionTransfersOwnershipAndRotates(t *testing.T) 
 	planned.Revision = types.Int64Unknown()
 
 	var captured client.MutationOptions
-	remote := componentIntegrationTestRemote(testIntegrationVersionTwo, 4, "automation")
+	remote := componentIntegrationTestRemote(testIntegrationVersionTwo, 4)
 	implementation := &componentIntegrationResource{api: &fakeIntegrationAPI{
 		adopt: func(_ context.Context, componentID string, options client.MutationOptions) (client.ComponentIntegrationMutation, error) {
 			if componentID != testIntegrationComponentID {
@@ -586,7 +586,7 @@ func TestComponentIntegrationImportUsesBoundComponentUUID(t *testing.T) {
 		t.Fatalf("imported component ID = %q, want %q", got, want)
 	}
 
-	remote := componentIntegrationTestRemote(testIntegrationVersionOne, 3, "automation")
+	remote := componentIntegrationTestRemote(testIntegrationVersionOne, 3)
 	implementation.api = &fakeIntegrationAPI{
 		get: func(context.Context, string) (client.ComponentIntegration, error) { return remote, nil },
 	}
@@ -639,14 +639,14 @@ func componentIntegrationTestModel() componentIntegrationResourceModel {
 	}
 }
 
-func componentIntegrationTestRemote(versionID string, revision int64, owner string) client.ComponentIntegration {
+func componentIntegrationTestRemote(versionID string, revision int64) client.ComponentIntegration {
 	return client.ComponentIntegration{
 		ID:                  testIntegrationID,
 		ComponentID:         testIntegrationComponentID,
 		Source:              grafanaIntegrationSource,
 		SourceKey:           "sequencer-commitment",
 		Endpoint:            "https://pulse.example.test/webhooks/component-integrations/" + testIntegrationID + "/grafana",
-		LifecycleOwner:      client.IntegrationLifecycleOwner(owner),
+		LifecycleOwner:      client.IntegrationLifecycleOwnerAutomation,
 		Status:              "active",
 		CredentialVersionID: versionID,
 		Revision:            revision,

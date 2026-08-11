@@ -275,6 +275,37 @@ func TestCatalogPathsAndDirectEnvelopes(t *testing.T) {
 	}
 }
 
+func TestListTagsRequiresDisplayOrderButAcceptsExplicitZero(t *testing.T) {
+	t.Parallel()
+
+	mock := clienttest.NewServer(t, testToken,
+		clienttest.Expectation{
+			Method:       http.MethodGet,
+			RequestURI:   "/api/automation/v1/tags",
+			StatusCode:   http.StatusOK,
+			ResponseBody: []byte(`{"items":[{"id":"tag-id","name":"network","purpose":"filter","display_label":null,"icon":null}],"next_cursor":""}`),
+		},
+		clienttest.Expectation{
+			Method:       http.MethodGet,
+			RequestURI:   "/api/automation/v1/tags",
+			StatusCode:   http.StatusOK,
+			ResponseBody: []byte(`{"items":[{"id":"tag-id","name":"network","purpose":"filter","display_label":null,"display_order":0,"icon":null}],"next_cursor":""}`),
+		},
+	)
+	implementation := newMockClient(t, mock)
+
+	if _, err := implementation.ListTags(context.Background(), ListOptions{}); err == nil || !IsContractError(err) {
+		t.Fatalf("missing display_order error = %v, want contract error", err)
+	}
+	page, err := implementation.ListTags(context.Background(), ListOptions{})
+	if err != nil {
+		t.Fatalf("list tags with explicit zero display_order: %v", err)
+	}
+	if got := page.Items[0].DisplayOrder; got != 0 {
+		t.Fatalf("display_order = %d, want 0", got)
+	}
+}
+
 func TestMutationOptionsFailClosedBeforeRequest(t *testing.T) {
 	t.Parallel()
 

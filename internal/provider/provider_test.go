@@ -33,7 +33,10 @@ func TestMetadata(t *testing.T) {
 func TestProviderRegistersInitialContractSurface(t *testing.T) {
 	t.Parallel()
 
-	implementation := New("test")().(*PulseProvider)
+	implementation, ok := New("test")().(*PulseProvider)
+	if !ok {
+		t.Fatal("provider constructor returned an unexpected implementation type")
+	}
 
 	var resourceTypes []string
 	for _, factory := range implementation.Resources(context.Background()) {

@@ -283,7 +283,7 @@ func (r *componentIntegrationResource) ModifyPlan(ctx context.Context, request r
 		return
 	}
 	secretUnavailable := state.Secret.IsNull()
-	if !rotationChanged && !secretUnavailable && !(humanOwned && adoptionApproved) {
+	if !rotationChanged && !secretUnavailable && (!humanOwned || !adoptionApproved) {
 		return
 	}
 
@@ -556,7 +556,7 @@ func (r *componentIntegrationResource) reissueSecret(ctx context.Context, compon
 		}
 		metadata = next
 	}
-	return client.ComponentIntegrationMutation{}, errors.New("Pulse could not return a new component-integration secret after bounded reissue attempts")
+	return client.ComponentIntegrationMutation{}, errors.New("pulse could not return a new component-integration secret after bounded reissue attempts")
 }
 
 func stateFromMutation(base componentIntegrationResourceModel, mutation client.ComponentIntegrationMutation) (componentIntegrationResourceModel, error) {
@@ -564,10 +564,10 @@ func stateFromMutation(base componentIntegrationResourceModel, mutation client.C
 		return componentIntegrationResourceModel{}, err
 	}
 	if mutation.Secret == nil || strings.TrimSpace(mutation.Secret.Value) == "" {
-		return componentIntegrationResourceModel{}, errors.New("Pulse did not return the one-time component-integration secret")
+		return componentIntegrationResourceModel{}, errors.New("pulse did not return the one-time component-integration secret")
 	}
 	if mutation.Secret.VersionID == "" || mutation.Secret.VersionID != mutation.Integration.CredentialVersionID {
-		return componentIntegrationResourceModel{}, errors.New("Pulse returned inconsistent component-integration credential version metadata")
+		return componentIntegrationResourceModel{}, errors.New("pulse returned inconsistent component-integration credential version metadata")
 	}
 
 	base = mergeRemoteIntegration(base, mutation.Integration)
@@ -592,34 +592,34 @@ func mergeRemoteIntegration(state componentIntegrationResourceModel, remote clie
 
 func validateRemoteIntegration(remote client.ComponentIntegration, expectedComponentID, expectedSourceKey string) error {
 	if !isCanonicalUUID(remote.ID) {
-		return errors.New("Pulse returned an invalid component-integration UUID")
+		return errors.New("pulse returned an invalid component-integration UUID")
 	}
 	if remote.ComponentID != expectedComponentID {
-		return errors.New("Pulse returned a component integration bound to an unexpected component")
+		return errors.New("pulse returned a component integration bound to an unexpected component")
 	}
 	if string(remote.Source) != grafanaIntegrationSource {
-		return errors.New("Pulse returned an unsupported component-integration source")
+		return errors.New("pulse returned an unsupported component-integration source")
 	}
 	if !sourceKeyPattern.MatchString(remote.SourceKey) {
-		return errors.New("Pulse returned an invalid component-integration source key")
+		return errors.New("pulse returned an invalid component-integration source key")
 	}
 	if expectedSourceKey != "" && remote.SourceKey != expectedSourceKey {
-		return errors.New("Pulse returned a component integration with an unexpected source key")
+		return errors.New("pulse returned a component integration with an unexpected source key")
 	}
 	if strings.TrimSpace(remote.Endpoint) == "" {
-		return errors.New("Pulse returned an empty component-integration endpoint")
+		return errors.New("pulse returned an empty component-integration endpoint")
 	}
 	if !isCanonicalUUID(remote.CredentialVersionID) {
-		return errors.New("Pulse returned an invalid component-integration credential version")
+		return errors.New("pulse returned an invalid component-integration credential version")
 	}
 	if string(remote.LifecycleOwner) != "human" && string(remote.LifecycleOwner) != "automation" {
-		return errors.New("Pulse returned an unsupported component-integration lifecycle owner")
+		return errors.New("pulse returned an unsupported component-integration lifecycle owner")
 	}
 	if remote.Revision < 1 {
-		return errors.New("Pulse returned an invalid component-integration revision")
+		return errors.New("pulse returned an invalid component-integration revision")
 	}
 	if remote.Status != client.IntegrationStatusActive {
-		return errors.New("Pulse returned an unsupported component-integration status")
+		return errors.New("pulse returned an unsupported component-integration status")
 	}
 	return nil
 }
@@ -642,7 +642,7 @@ func isCanonicalUUID(value string) bool {
 		if index == 8 || index == 13 || index == 18 || index == 23 {
 			continue
 		}
-		if !((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f') || (character >= 'A' && character <= 'F')) {
+		if (character < '0' || character > '9') && (character < 'a' || character > 'f') && (character < 'A' || character > 'F') {
 			return false
 		}
 	}

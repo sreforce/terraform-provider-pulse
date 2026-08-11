@@ -38,13 +38,13 @@ func normalizeRetryConfig(config RetryConfig) (RetryConfig, error) {
 		config.MaxDelay = defaultMaxRetryDelay
 	}
 	if config.MaxAttempts < 1 || config.MaxAttempts > 10 {
-		return RetryConfig{}, errors.New("Pulse retry max attempts must be between 1 and 10")
+		return RetryConfig{}, errors.New("pulse retry max attempts must be between 1 and 10")
 	}
 	if config.MinDelay < 0 || config.MaxDelay < 0 {
-		return RetryConfig{}, errors.New("Pulse retry delays must not be negative")
+		return RetryConfig{}, errors.New("pulse retry delays must not be negative")
 	}
 	if config.MaxDelay < config.MinDelay {
-		return RetryConfig{}, errors.New("Pulse retry maximum delay must not be less than minimum delay")
+		return RetryConfig{}, errors.New("pulse retry maximum delay must not be less than minimum delay")
 	}
 	return config, nil
 }
@@ -137,7 +137,7 @@ func cloneRequest(request *http.Request, attempt int) (*http.Request, error) {
 		if attempt == 1 {
 			return request, nil
 		}
-		return nil, errors.New("Pulse API request body cannot be replayed")
+		return nil, errors.New("pulse API request body cannot be replayed")
 	}
 	body, err := request.GetBody()
 	if err != nil {
@@ -164,7 +164,14 @@ func retryableTransportError(err error) bool {
 		return true
 	}
 	var networkErr net.Error
-	return errors.As(err, &networkErr) && (networkErr.Timeout() || networkErr.Temporary())
+	if errors.As(err, &networkErr) && networkErr.Timeout() {
+		return true
+	}
+	var temporaryErr interface {
+		error
+		Temporary() bool
+	}
+	return errors.As(err, &temporaryErr) && temporaryErr.Temporary()
 }
 
 func incompleteJSON(err error, bodyLength int) bool {
@@ -181,7 +188,7 @@ func readBounded(reader io.Reader, maximum int64) ([]byte, error) {
 		return nil, err
 	}
 	if int64(len(body)) > maximum {
-		return nil, errors.New("Pulse API response exceeded the size limit")
+		return nil, errors.New("pulse API response exceeded the size limit")
 	}
 	return body, nil
 }

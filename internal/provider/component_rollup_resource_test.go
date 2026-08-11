@@ -226,7 +226,7 @@ func TestComponentRollupCreateUsesCreatePreconditionAndCanonicalState(t *testing
 		WhenChildYellow:   client.RollupEffect("yellow"),
 		WhenChildRed:      client.RollupEffect("red"),
 	}}
-	plan := mustComponentRollupModel(t, testRollupParentID, rules, 0)
+	plan := mustComponentRollupModel(t, rules, 0)
 	plan.Revision = types.Int64Unknown()
 	schemaValue := componentRollupTestSchema(t)
 	requestPlan := tfsdk.Plan{Schema: schemaValue}
@@ -271,12 +271,12 @@ func TestComponentRollupCreateUsesCreatePreconditionAndCanonicalState(t *testing
 func TestComponentRollupUpdateCarriesPriorRevision(t *testing.T) {
 	t.Parallel()
 
-	prior := mustComponentRollupModel(t, testRollupParentID, []client.RollupRule{{
+	prior := mustComponentRollupModel(t, []client.RollupRule{{
 		ChildComponentIDs: []string{testRollupChildAID},
 		WhenChildYellow:   client.RollupEffect("yellow"),
 		WhenChildRed:      client.RollupEffect("red"),
 	}}, 7)
-	planned := mustComponentRollupModel(t, testRollupParentID, []client.RollupRule{{
+	planned := mustComponentRollupModel(t, []client.RollupRule{{
 		ChildComponentIDs: []string{testRollupChildAID, testRollupChildBID},
 		WhenChildYellow:   client.RollupEffect("yellow"),
 		WhenChildRed:      client.RollupEffect("red"),
@@ -312,7 +312,7 @@ func TestComponentRollupUpdateCarriesPriorRevision(t *testing.T) {
 func TestComponentRollupCreateConflictNeverImplicitlyAdopts(t *testing.T) {
 	t.Parallel()
 
-	planModel := mustComponentRollupModel(t, testRollupParentID, nil, 0)
+	planModel := mustComponentRollupModel(t, nil, 0)
 	schemaValue := componentRollupTestSchema(t)
 	plan := tfsdk.Plan{Schema: schemaValue}
 	assertNoDiagnostics(t, plan.Set(context.Background(), &planModel))
@@ -346,7 +346,7 @@ func TestComponentRollupCreateConflictNeverImplicitlyAdopts(t *testing.T) {
 func TestComponentRollupReadIsCanonicalAndStableOnSecondRefresh(t *testing.T) {
 	t.Parallel()
 
-	initial := mustComponentRollupModel(t, testRollupParentID, []client.RollupRule{{
+	initial := mustComponentRollupModel(t, []client.RollupRule{{
 		ChildComponentIDs: []string{testRollupChildAID, testRollupChildBID},
 		WhenChildYellow:   client.RollupEffect("yellow"),
 		WhenChildRed:      client.RollupEffect("red"),
@@ -386,7 +386,7 @@ func TestComponentRollupReadIsCanonicalAndStableOnSecondRefresh(t *testing.T) {
 func TestComponentRollupReadRemovesMissingRulesetFromState(t *testing.T) {
 	t.Parallel()
 
-	initial := mustComponentRollupModel(t, testRollupParentID, nil, 5)
+	initial := mustComponentRollupModel(t, nil, 5)
 	schemaValue := componentRollupTestSchema(t)
 	initialState := tfsdk.State{Schema: schemaValue}
 	assertNoDiagnostics(t, initialState.Set(context.Background(), &initial))
@@ -412,7 +412,7 @@ func TestComponentRollupReadRemovesMissingRulesetFromState(t *testing.T) {
 func TestComponentRollupReadPreservesConfiguredEmptyRuleset(t *testing.T) {
 	t.Parallel()
 
-	initial := mustComponentRollupModel(t, testRollupParentID, []client.RollupRule{{
+	initial := mustComponentRollupModel(t, []client.RollupRule{{
 		ChildComponentIDs: []string{testRollupChildAID},
 		WhenChildYellow:   client.RollupEffect("yellow"),
 		WhenChildRed:      client.RollupEffect("red"),
@@ -468,7 +468,7 @@ func TestComponentRollupStaleRevisionDiagnosticIsActionable(t *testing.T) {
 func TestComponentRollupDeleteCarriesRevision(t *testing.T) {
 	t.Parallel()
 
-	stateModel := mustComponentRollupModel(t, testRollupParentID, nil, 11)
+	stateModel := mustComponentRollupModel(t, nil, 11)
 	schemaValue := componentRollupTestSchema(t)
 	state := tfsdk.State{Schema: schemaValue}
 	assertNoDiagnostics(t, state.Set(context.Background(), &stateModel))
@@ -496,7 +496,7 @@ func TestComponentRollupDeleteCarriesRevision(t *testing.T) {
 func TestComponentRollupDeleteRejectsMissingRevisionBeforeCallingAPI(t *testing.T) {
 	t.Parallel()
 
-	stateModel := mustComponentRollupModel(t, testRollupParentID, nil, 1)
+	stateModel := mustComponentRollupModel(t, nil, 1)
 	stateModel.Revision = types.Int64Unknown()
 	schemaValue := componentRollupTestSchema(t)
 	state := tfsdk.State{Schema: schemaValue}
@@ -604,10 +604,10 @@ func componentRollupTestSchema(t *testing.T) resourceschema.Schema {
 	return response.Schema
 }
 
-func mustComponentRollupModel(t *testing.T, parentID string, rules []client.RollupRule, revision int64) componentRollupResourceModel {
+func mustComponentRollupModel(t *testing.T, rules []client.RollupRule, revision int64) componentRollupResourceModel {
 	t.Helper()
-	model, diagnostics := componentRollupModelFromAPI(context.Background(), parentID, client.ComponentRollup{
-		ParentComponentID: parentID,
+	model, diagnostics := componentRollupModelFromAPI(context.Background(), testRollupParentID, client.ComponentRollup{
+		ParentComponentID: testRollupParentID,
 		Rules:             rules,
 		Revision:          revision,
 	})
@@ -615,7 +615,7 @@ func mustComponentRollupModel(t *testing.T, parentID string, rules []client.Roll
 		// The API never returns revision zero; this helper uses it only while
 		// constructing Terraform's pre-create plan.
 		model = componentRollupResourceModel{
-			ParentComponentID: types.StringValue(parentID),
+			ParentComponentID: types.StringValue(testRollupParentID),
 			Rules:             mustAPIRulesValue(t, rules),
 			Revision:          types.Int64Unknown(),
 		}

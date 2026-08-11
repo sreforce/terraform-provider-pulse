@@ -62,6 +62,34 @@ type Tag struct {
 	Icon         *string `json:"icon"`
 }
 
+// UnmarshalJSON distinguishes an omitted or null display_order from its valid
+// zero value. The field is required by the canonical automation API contract.
+func (t *Tag) UnmarshalJSON(data []byte) error {
+	var wire struct {
+		ID           string  `json:"id"`
+		Name         string  `json:"name"`
+		Purpose      string  `json:"purpose"`
+		DisplayLabel *string `json:"display_label"`
+		DisplayOrder *int64  `json:"display_order"`
+		Icon         *string `json:"icon"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+	if wire.DisplayOrder == nil {
+		return contractError("tag collection")
+	}
+	*t = Tag{
+		ID:           wire.ID,
+		Name:         wire.Name,
+		Purpose:      wire.Purpose,
+		DisplayLabel: wire.DisplayLabel,
+		DisplayOrder: *wire.DisplayOrder,
+		Icon:         wire.Icon,
+	}
+	return nil
+}
+
 // ListOptions controls stable cursor pagination.
 type ListOptions struct {
 	Cursor string
@@ -85,7 +113,7 @@ func (p *Page[T]) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	if wire.Items == nil || wire.NextCursor == nil {
-		return errors.New("Pulse collection response is missing required fields")
+		return errors.New("pulse collection response is missing required fields")
 	}
 	p.Items = *wire.Items
 	p.NextCursor = *wire.NextCursor
