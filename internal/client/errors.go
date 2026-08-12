@@ -48,7 +48,6 @@ type FieldViolation struct {
 // SecretReissueMetadata identifies an integration version whose one-time
 // plaintext response was not received. It never contains secret material.
 type SecretReissueMetadata struct {
-	IntegrationID       string
 	CredentialVersionID string
 	Revision            int64
 }
@@ -133,7 +132,6 @@ type wireFieldViolation struct {
 }
 
 type wireSecretReissueMetadata struct {
-	IntegrationID       string `json:"integration_id"`
 	CredentialVersionID string `json:"credential_version_id"`
 	Revision            int64  `json:"revision"`
 }
@@ -163,11 +161,9 @@ func decodeResponseError(response *http.Response, body []byte) *ResponseError {
 		}
 	}
 	if result.Code == ErrorCodeSecretReissueRequired && envelope.Recovery != nil {
-		integrationID := safeIdentifier(envelope.Recovery.IntegrationID)
 		versionID := safeIdentifier(envelope.Recovery.CredentialVersionID)
-		if integrationID != "" && versionID != "" && envelope.Recovery.Revision > 0 {
+		if versionID != "" && envelope.Recovery.Revision > 0 {
 			result.SecretReissue = &SecretReissueMetadata{
-				IntegrationID:       integrationID,
 				CredentialVersionID: versionID,
 				Revision:            envelope.Recovery.Revision,
 			}

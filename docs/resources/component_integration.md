@@ -3,39 +3,38 @@
 page_title: "pulse_component_integration Resource - pulse"
 subcategory: "Components"
 description: |-
-  Manages the component-bound Grafana ingestion integration for one external Pulse component. The one-time secret is stored in Terraform state and must be treated as sensitive.
+  Manages one provider-specific ingestion integration bound to a Pulse component. Its one-time secret is stored in Terraform state and must be treated as sensitive.
 ---
 
 # pulse_component_integration (Resource)
 
-Manages the component-bound Grafana ingestion integration for one external Pulse component. The one-time secret is stored in Terraform state and must be treated as sensitive.
+Manages one provider-specific ingestion integration bound to a Pulse component. Its one-time secret is stored in Terraform state and must be treated as sensitive.
 
-The provider authenticates with the organization's automation key, but Grafana
-receives the much narrower component-bound `secret`. That secret can send
-signals only through this integration. Rollup components cannot have
-integrations.
+The provider authenticates with the organization's automation key, but the
+signal sender receives the much narrower component-bound `secret`. That secret
+can send signals only to the selected component through the selected provider
+adapter.
 
-`source_key` is the immutable identity of one reviewed Grafana mapping. To use
-another key, create another external alert-leaf component and bind the new
-integration there; do not rename a key on an existing leaf. Hierarchical keys
-such as `production/platform/example-service/grafana-rule-001` are supported;
-the exact value must match the Grafana rule's `pulse_alert_key` label.
+`component_id` and `integration_provider` form the immutable natural identity.
+`integration_provider` accepts `grafana`, `pagerduty`, or `pulse`; the attribute
+cannot be named `provider` because Terraform reserves that name. Pulse returns
+the corresponding `/webhooks/components/{component_id}/{provider}` endpoint.
+The component may also receive direct state, own children, and have rollup rules.
 
 Pulse reveals `secret` only when the integration is created, rotated, or
 adopted. Terraform necessarily retains that value in state so it can configure
-a Grafana contact point. Terraform marks it sensitive only to mask display; the
-backend storing state must independently provide encryption, version access
-controls, and retention protections. Rotate the credential if state exposure
-is suspected.
+the corresponding sender or contact point. Terraform marks it sensitive only
+to mask display; the backend storing state must independently provide
+encryption, version access controls, and retention protections. Rotate the
+credential if state exposure is suspected.
 
 ## Example Usage
 
 ```terraform
-resource "pulse_component_integration" "example_alert" {
-  component_id     = pulse_component.example_alert.id
-  source           = "grafana"
-  source_key       = "production/platform/example-service/grafana-rule-001"
-  rotation_trigger = "2026-08-initial"
+resource "pulse_component_integration" "example_service_grafana" {
+  component_id         = pulse_component.example_service.id
+  integration_provider = "grafana"
+  rotation_trigger     = "2026-08-initial"
 }
 ```
 
@@ -50,7 +49,7 @@ non-sensitive and appears in plans.
 
 ## Drift behavior
 
-If Pulse reports a credential version different from the version associated
+If Pulse reports a computed `version` different from the version associated
 with Terraform's stored secret, the provider clears the unusable secret, sets
 `rotation_required`, and warns. Planning is blocked while `rotation_trigger`
 is unchanged. Change it to a new value and apply; the provider never pretends
@@ -66,32 +65,29 @@ destroy from bypassing the ownership transfer and credential rotation.
 
 ### Required
 
-- `component_id` (String) UUID of the external Pulse component receiving this integration. Rollup components cannot receive integrations.
+- `component_id` (String) UUID of the Pulse component that receives signals. Components may also own children and rollup rules.
+- `integration_provider` (String) Signal adapter: `grafana`, `pagerduty`, or `pulse`. Together with component_id this is the immutable integration identity.
 - `rotation_trigger` (String) Non-secret caller-controlled value. Changing it rotates the component-bound ingestion credential.
-- `source` (String) Integration source. Version 0.1 supports only `grafana`.
-- `source_key` (String) Immutable Grafana mapping identity expected in the `pulse_alert_key` payload field. It accepts up to 128 lowercase hierarchy characters matching `^[a-z0-9][a-z0-9._:/-]{0,127}$`.
 
 ### Optional
 
-- `adopt` (Boolean) Explicitly permit this resource to adopt a human-owned integration. Adoption transfers lifecycle ownership to automation and rotates its credential atomically.
+- `adopt` (Boolean) Explicitly permit Terraform to adopt a human-owned integration. Adoption transfers lifecycle ownership and rotates the credential atomically.
 
 ### Read-Only
 
-- `endpoint` (String) Component-bound Grafana webhook endpoint.
-- `id` (String) Pulse component-integration UUID.
+- `endpoint` (String) Provider-specific component webhook endpoint.
 - `lifecycle_owner` (String) Lifecycle owner reported by Pulse: `human` or `automation`.
-- `observed_version` (String) Credential-version UUID associated with `secret`.
 - `revision` (Number) Pulse configuration revision used for optimistic concurrency.
-- `rotation_required` (Boolean) Whether Terraform must deliberately rotate before it can use this integration secret. This is true after import or out-of-band credential-version drift.
-- `secret` (String, Sensitive) One-time Grafana ingestion secret. Pulse never returns an existing secret again. Import therefore requires an explicit rotation.
-- `status` (String) Integration lifecycle status reported by Pulse.
+- `rotation_required` (Boolean) Whether Terraform must deliberately rotate because the active plaintext secret is unavailable or changed outside Terraform.
+- `secret` (String, Sensitive) One-time ingestion secret. Pulse never returns an existing secret again; import therefore requires an explicit rotation.
+- `version` (String) Credential-version UUID associated with secret.
 
 ## Import and adoption
 
-Import uses the bound component UUID, not the integration UUID:
+Import uses the natural component/provider identity:
 
 ```shell
-terraform import pulse_component_integration.example_alert 11111111-1111-4111-8111-111111111111
+terraform import pulse_component_integration.example_service_grafana 11111111-1111-4111-8111-111111111111/grafana
 ```
 
 Pulse never returns an existing plaintext credential, so import cannot

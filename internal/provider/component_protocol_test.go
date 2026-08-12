@@ -23,10 +23,10 @@ func TestComponentResourceProtocolLifecycle(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	createBody := []byte("{\"external_key\":\"production/platform/example-service\",\"kind\":\"external\",\"name\":\"Example service\",\"component_type_id\":\"" + componentProtocolType + "\",\"owner_team_id\":null,\"relevance_tag_ids\":[],\"filter_tag_ids\":[],\"alert_enabled\":false}\n")
+	createBody := []byte("{\"external_key\":\"production/platform/example-service\",\"name\":\"Example service\",\"component_type_id\":\"" + componentProtocolType + "\",\"owner_team_id\":null,\"relevance_tag_ids\":[],\"filter_tag_ids\":[],\"alert_enabled\":false}\n")
 	updateBody := []byte("{\"name\":\"Example service v2\",\"component_type_id\":\"" + componentProtocolType + "\",\"owner_team_id\":null,\"relevance_tag_ids\":[],\"filter_tag_ids\":[],\"alert_enabled\":false}\n")
-	readBody := []byte(`{"id":"` + componentProtocolID + `","external_key":"production/platform/example-service","kind":"external","name":"Example service","component_type_id":"` + componentProtocolType + `","owner_team_id":null,"relevance_tag_ids":[],"filter_tag_ids":[],"alert_enabled":false,"state":"yellow","state_reason":"Warning signal active.","revision":7,"archived_at":null}`)
-	updatedBody := []byte(`{"id":"` + componentProtocolID + `","external_key":"production/platform/example-service","kind":"external","name":"Example service v2","component_type_id":"` + componentProtocolType + `","owner_team_id":null,"relevance_tag_ids":[],"filter_tag_ids":[],"alert_enabled":false,"state":"red","state_reason":"Critical signal active.","revision":8,"archived_at":null}`)
+	readBody := []byte(`{"id":"` + componentProtocolID + `","external_key":"production/platform/example-service","name":"Example service","component_type_id":"` + componentProtocolType + `","owner_team_id":null,"relevance_tag_ids":[],"filter_tag_ids":[],"alert_enabled":false,"state":"yellow","state_reason":"Warning signal active.","revision":7,"archived_at":null}`)
+	updatedBody := []byte(`{"id":"` + componentProtocolID + `","external_key":"production/platform/example-service","name":"Example service v2","component_type_id":"` + componentProtocolType + `","owner_team_id":null,"relevance_tag_ids":[],"filter_tag_ids":[],"alert_enabled":false,"state":"red","state_reason":"Critical signal active.","revision":8,"archived_at":null}`)
 
 	mock := clienttest.NewServer(t, componentProtocolToken,
 		clienttest.Expectation{
@@ -174,9 +174,6 @@ func TestComponentResourceProtocolImportThenRead(t *testing.T) {
 	if got, want := imported.ExternalKey.ValueString(), "production/platform/example-service"; got != want {
 		t.Fatalf("imported external key = %q, want %q", got, want)
 	}
-	if got, want := imported.Kind.ValueString(), "external"; got != want {
-		t.Fatalf("imported kind = %q, want %q", got, want)
-	}
 	if got, want := imported.ConfigurationRevision.ValueInt64(), int64(7); got != want {
 		t.Fatalf("imported revision = %d, want %d", got, want)
 	}
@@ -211,7 +208,6 @@ func componentProtocolModel() componentResourceModel {
 	return componentResourceModel{
 		ID:                    types.StringUnknown(),
 		ExternalKey:           types.StringValue("production/platform/example-service"),
-		Kind:                  types.StringValue("external"),
 		Name:                  types.StringValue("Example service"),
 		ComponentTypeID:       types.StringValue(componentProtocolType),
 		OwnerTeamID:           types.StringNull(),

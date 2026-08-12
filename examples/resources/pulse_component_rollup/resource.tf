@@ -1,7 +1,8 @@
 resource "pulse_component_rollup" "example_service" {
   parent_component_id = pulse_component.example_service.id
 
-  # Rules are evaluated in this order. Children inside a rule are a set.
+  # Static rules are evaluated in this order. Ingestion-created dynamic
+  # children remain server-managed and are not part of this resource.
   rules = [
     {
       child_component_ids = [

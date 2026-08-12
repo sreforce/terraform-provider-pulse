@@ -29,7 +29,6 @@ type ComponentResource struct {
 type componentResourceModel struct {
 	ID                    types.String `tfsdk:"id"`
 	ExternalKey           types.String `tfsdk:"external_key"`
-	Kind                  types.String `tfsdk:"kind"`
 	Name                  types.String `tfsdk:"name"`
 	ComponentTypeID       types.String `tfsdk:"component_type_id"`
 	OwnerTeamID           types.String `tfsdk:"owner_team_id"`
@@ -53,6 +52,7 @@ func (r *ComponentResource) Metadata(_ context.Context, request resource.Metadat
 // Schema defines configuration-owned and computed component attributes.
 func (r *ComponentResource) Schema(_ context.Context, _ resource.SchemaRequest, response *resource.SchemaResponse) {
 	response.Schema = schema.Schema{
+		Version:             1,
 		MarkdownDescription: "Manages one organization-scoped Pulse component. Deleting the Terraform resource archives the component and preserves its operational history.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
@@ -63,12 +63,6 @@ func (r *ComponentResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 				MarkdownDescription: "Organization-unique, immutable automation identity. Display names may be duplicated; this key may not.",
 				Required:            true,
 				Validators:          []validator.String{nonBlankStringValidator{}},
-				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
-			},
-			"kind": schema.StringAttribute{
-				MarkdownDescription: "Immutable component mode. Must be `external` for a signal-receiving leaf or `rollup` for an aggregate. Changing it also requires a new `external_key`.",
-				Required:            true,
-				Validators:          []validator.String{componentKindValidator{}},
 				PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
 			},
 			"name": schema.StringAttribute{
@@ -101,7 +95,7 @@ func (r *ComponentResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 				Default:             setdefault.StaticValue(types.SetValueMust(types.StringType, []attr.Value{})),
 			},
 			"alert_enabled": schema.BoolAttribute{
-				MarkdownDescription: "Whether the component may initiate Pulse operational alerting. Shadow Grafana mappings should normally leave this false.",
+				MarkdownDescription: "Whether the component may initiate Pulse operational alerting. Observability-only components should normally leave this false.",
 				Optional:            true,
 				Computed:            true,
 				Default:             booldefault.StaticBool(false),
@@ -135,8 +129,8 @@ func (r *ComponentResource) Configure(_ context.Context, request resource.Config
 	r.client = configuredClient
 }
 
-// ModifyPlan prevents a kind-only replacement from attempting to restore the
-// same immutable external identity with a different mode.
+// ModifyPlan preserves the server UUID when immutable external identity is
+// unchanged and Terraform only updates mutable configuration.
 func (r *ComponentResource) ModifyPlan(ctx context.Context, request resource.ModifyPlanRequest, response *resource.ModifyPlanResponse) {
 	if request.State.Raw.IsNull() || request.Plan.Raw.IsNull() {
 		return
@@ -148,24 +142,13 @@ func (r *ComponentResource) ModifyPlan(ctx context.Context, request resource.Mod
 	response.Diagnostics.Append(request.State.Get(ctx, &state)...)
 	response.Diagnostics.Append(request.Plan.Get(ctx, &plan)...)
 	if response.Diagnostics.HasError() ||
-		state.Kind.IsNull() || state.Kind.IsUnknown() ||
-		plan.Kind.IsNull() || plan.Kind.IsUnknown() ||
 		state.ExternalKey.IsNull() || state.ExternalKey.IsUnknown() ||
 		plan.ExternalKey.IsNull() || plan.ExternalKey.IsUnknown() {
 		return
 	}
 
 	sameExternalKey := state.ExternalKey.ValueString() == plan.ExternalKey.ValueString()
-	sameKind := state.Kind.ValueString() == plan.Kind.ValueString()
-	if !sameKind && sameExternalKey {
-		response.Diagnostics.AddAttributeError(
-			path.Root("kind"),
-			"Pulse component kind is immutable",
-			"Pulse restores an archived component when its external_key is reused, so changing kind also requires a new external_key.",
-		)
-		return
-	}
-	if sameExternalKey && sameKind && !state.ID.IsNull() && !state.ID.IsUnknown() && plan.ID.IsUnknown() {
+	if sameExternalKey && !state.ID.IsNull() && !state.ID.IsUnknown() && plan.ID.IsUnknown() {
 		response.Diagnostics.Append(response.Plan.SetAttribute(ctx, path.Root("id"), state.ID)...)
 	}
 }
@@ -196,10 +179,10 @@ func (r *ComponentResource) Create(ctx context.Context, request resource.CreateR
 		)
 		return
 	}
-	if !remoteComponentIdentityMatches(component, "", createRequest.ExternalKey, string(createRequest.Kind)) {
+	if !remoteComponentIdentityMatches(component, "", createRequest.ExternalKey) {
 		response.Diagnostics.AddError(
 			"Pulse returned an unexpected component identity",
-			"The create response did not match the requested immutable external_key and kind. Terraform refused to adopt the unrelated component.",
+			"The create response did not match the requested immutable external_key. Terraform refused to adopt the unrelated component.",
 		)
 		return
 	}
@@ -249,11 +232,7 @@ func (r *ComponentResource) Read(ctx context.Context, request resource.ReadReque
 	if !state.ExternalKey.IsNull() && !state.ExternalKey.IsUnknown() {
 		expectedExternalKey = state.ExternalKey.ValueString()
 	}
-	expectedKind := ""
-	if !state.Kind.IsNull() && !state.Kind.IsUnknown() {
-		expectedKind = state.Kind.ValueString()
-	}
-	if !remoteComponentIdentityMatches(component, componentID, expectedExternalKey, expectedKind) {
+	if !remoteComponentIdentityMatches(component, componentID, expectedExternalKey) {
 		response.Diagnostics.AddError(
 			"Pulse returned an unexpected component identity",
 			"The read response did not match the requested component UUID or its previously observed immutable identity.",
@@ -290,7 +269,7 @@ func (r *ComponentResource) Update(ctx context.Context, request resource.UpdateR
 		return
 	}
 
-	componentID, externalKey, kind, identityDiagnostics := componentStoredIdentityFromState(state)
+	componentID, externalKey, identityDiagnostics := componentStoredIdentityFromState(state)
 	response.Diagnostics.Append(identityDiagnostics...)
 	revision, revisionDiagnostics := componentRevisionFromState(state)
 	response.Diagnostics.Append(revisionDiagnostics...)
@@ -319,10 +298,10 @@ func (r *ComponentResource) Update(ctx context.Context, request resource.UpdateR
 		)
 		return
 	}
-	if !remoteComponentIdentityMatches(component, componentID, externalKey, kind) {
+	if !remoteComponentIdentityMatches(component, componentID, externalKey) {
 		response.Diagnostics.AddError(
 			"Pulse returned an unexpected component identity",
-			"The update response did not match the component UUID, external_key, and kind that Terraform updated.",
+			"The update response did not match the component UUID and external_key that Terraform updated.",
 		)
 		return
 	}
@@ -397,7 +376,6 @@ func componentCreateRequestFromModel(ctx context.Context, model componentResourc
 
 	return client.ComponentCreateRequest{
 		ExternalKey:     model.ExternalKey.ValueString(),
-		Kind:            client.ComponentKind(model.Kind.ValueString()),
 		Name:            model.Name.ValueString(),
 		ComponentTypeID: model.ComponentTypeID.ValueString(),
 		OwnerTeamID:     ownerTeamID,
@@ -456,7 +434,6 @@ func validateComponentPlan(model componentResourceModel, includeIdentity bool) d
 
 	if includeIdentity {
 		knownString(path.Root("external_key"), model.ExternalKey)
-		knownString(path.Root("kind"), model.Kind)
 	}
 	knownString(path.Root("name"), model.Name)
 	knownString(path.Root("component_type_id"), model.ComponentTypeID)
@@ -517,7 +494,7 @@ func componentIDFromState(model componentResourceModel) (string, diag.Diagnostic
 	return model.ID.ValueString(), diagnostics
 }
 
-func componentStoredIdentityFromState(model componentResourceModel) (string, string, string, diag.Diagnostics) {
+func componentStoredIdentityFromState(model componentResourceModel) (string, string, diag.Diagnostics) {
 	componentID, diagnostics := componentIDFromState(model)
 	if model.ExternalKey.IsNull() || model.ExternalKey.IsUnknown() || strings.TrimSpace(model.ExternalKey.ValueString()) == "" {
 		diagnostics.AddAttributeError(
@@ -526,21 +503,13 @@ func componentStoredIdentityFromState(model componentResourceModel) (string, str
 			"Refresh the component before applying an update so Terraform can verify immutable identity.",
 		)
 	}
-	if model.Kind.IsNull() || model.Kind.IsUnknown() || strings.TrimSpace(model.Kind.ValueString()) == "" {
-		diagnostics.AddAttributeError(
-			path.Root("kind"),
-			"Pulse component kind is not available",
-			"Refresh the component before applying an update so Terraform can verify immutable identity.",
-		)
-	}
-	return componentID, model.ExternalKey.ValueString(), model.Kind.ValueString(), diagnostics
+	return componentID, model.ExternalKey.ValueString(), diagnostics
 }
 
 func componentModelFromRemote(ctx context.Context, component client.Component) (componentResourceModel, diag.Diagnostics) {
 	var diagnostics diag.Diagnostics
 	if strings.TrimSpace(component.ID) == "" ||
 		strings.TrimSpace(component.ExternalKey) == "" ||
-		strings.TrimSpace(string(component.Kind)) == "" ||
 		strings.TrimSpace(component.Name) == "" ||
 		strings.TrimSpace(component.ComponentTypeID) == "" ||
 		strings.TrimSpace(string(component.State)) == "" ||
@@ -573,7 +542,6 @@ func componentModelFromRemote(ctx context.Context, component client.Component) (
 	return componentResourceModel{
 		ID:                    types.StringValue(component.ID),
 		ExternalKey:           types.StringValue(component.ExternalKey),
-		Kind:                  types.StringValue(string(component.Kind)),
 		Name:                  types.StringValue(component.Name),
 		ComponentTypeID:       types.StringValue(component.ComponentTypeID),
 		OwnerTeamID:           ownerTeamID,
@@ -585,37 +553,14 @@ func componentModelFromRemote(ctx context.Context, component client.Component) (
 	}, diagnostics
 }
 
-func remoteComponentIdentityMatches(component client.Component, expectedID, expectedExternalKey, expectedKind string) bool {
+func remoteComponentIdentityMatches(component client.Component, expectedID, expectedExternalKey string) bool {
 	if expectedID != "" && component.ID != expectedID {
 		return false
 	}
 	if expectedExternalKey != "" && component.ExternalKey != expectedExternalKey {
 		return false
 	}
-	return expectedKind == "" || string(component.Kind) == expectedKind
-}
-
-type componentKindValidator struct{}
-
-func (componentKindValidator) Description(context.Context) string {
-	return "value must be external or rollup"
-}
-
-func (componentKindValidator) MarkdownDescription(context.Context) string {
-	return "value must be `external` or `rollup`"
-}
-
-func (componentKindValidator) ValidateString(_ context.Context, request validator.StringRequest, response *validator.StringResponse) {
-	if request.ConfigValue.IsNull() || request.ConfigValue.IsUnknown() {
-		return
-	}
-	if value := request.ConfigValue.ValueString(); value != "external" && value != "rollup" {
-		response.Diagnostics.AddAttributeError(
-			request.Path,
-			"Invalid Pulse component kind",
-			fmt.Sprintf("Kind must be either \"external\" or \"rollup\", not %q.", value),
-		)
-	}
+	return true
 }
 
 type nonBlankStringValidator struct{}
@@ -647,6 +592,5 @@ var (
 	_ resource.ResourceWithConfigure   = (*ComponentResource)(nil)
 	_ resource.ResourceWithImportState = (*ComponentResource)(nil)
 	_ resource.ResourceWithModifyPlan  = (*ComponentResource)(nil)
-	_ validator.String                 = componentKindValidator{}
 	_ validator.String                 = nonBlankStringValidator{}
 )

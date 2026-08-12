@@ -1,7 +1,6 @@
 {
   "id": "00000000-0000-4000-8000-000000000101",
   "external_key": "production/platform/example-service",
-  "kind": "external",
   "name": "Example service",
   "component_type_id": "00000000-0000-4000-8000-000000000201",
   "owner_team_id": null,

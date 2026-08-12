@@ -3,9 +3,11 @@
 The Pulse provider manages organization-scoped Pulse configuration through Terraform. It is built with the [Terraform Plugin Framework](https://developer.hashicorp.com/terraform/plugin/framework) and uses protocol version 6.
 
 > [!IMPORTANT]
-> The `0.1.x` line targets Pulse's organization-scoped `/api/automation/v1` contract. Do not point it at Pulse's platform-wide `/api/v1` API or give it a platform internal token.
+> The `0.2.x` line targets Pulse's organization-scoped `/api/automation/v1` contract. Do not point it at Pulse's platform-wide `/api/v1` API or give it a platform internal token.
 
-The initial provider surface manages components, complete rollup definitions, and component-bound Grafana integrations. It also provides read-only lookups for the current organization, components, component types, teams, and tags. Runtime component state is observed but never submitted as desired configuration.
+The provider manages components, complete static rollup definitions, and component-bound Grafana, PagerDuty, and Pulse Native ingestion integrations. It also provides read-only lookups for the current organization, components, component types, teams, and tags. Runtime component state is observed but never submitted as desired configuration.
+
+Pulse components do not have separate external and rollup modes. The same component may receive direct signals, own children, and participate in rollup rules at the same time. Dynamic children created by ingestion are server-owned runtime topology: the provider neither enumerates nor adopts them, and they do not create Terraform drift.
 
 ## Configuration
 
@@ -30,7 +32,9 @@ provider "pulse" {}
 
 The provider block can set `api_url` and `token` explicitly, but environment variables are recommended so credentials do not enter configuration files. `PULSE_API_TOKEN` is an organization-scoped automation credential; it must not be Pulse's platform-wide internal API token or a webhook-ingestion token. Pulse API and component-integration endpoints require HTTPS. Plain HTTP can be enabled only for an explicit loopback development endpoint with `allow_insecure_http = true`.
 
-Component-integration credentials are returned once and retained as sensitive Terraform state so another provider can configure the corresponding Grafana contact point. Terraform's sensitive flag masks display; it does not remove that secret from current or historical state. Restrict state access and rotate or revoke a component integration before treating an exposed state version as safe.
+Component-integration credentials are returned once and retained as sensitive Terraform state so another provider can configure the corresponding sender. Terraform's sensitive flag masks display; it does not remove that secret from current or historical state. Restrict state access and rotate or revoke a component integration before treating an exposed state version as safe.
+
+An integration's immutable identity is its `component_id` plus `integration_provider`. Supported providers are `grafana`, `pagerduty`, and `pulse`; Pulse returns the corresponding `/webhooks/components/{component_id}/{provider}` endpoint. Imports use `{component_uuid}/{provider}` and require an intentional credential rotation because Pulse never returns existing plaintext secrets.
 
 ## Development
 

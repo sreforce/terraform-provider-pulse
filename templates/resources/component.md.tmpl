@@ -10,8 +10,12 @@ description: |-
 
 {{ .Description | trimspace }}
 
-Runtime state is read from Pulse but is computed-only, so Grafana signals do
+Runtime state is read from Pulse but is computed-only, so ingestion signals do
 not create Terraform configuration drift.
+
+Components do not have separate signal-receiving and rollup modes. The same
+component may receive direct signals, own children, and have static rollup
+rules. Those capabilities do not require replacing the component.
 
 Display names may repeat. `external_key` is the stable, organization-unique
 automation identity. Pulse uses it to recover a lost create response and to

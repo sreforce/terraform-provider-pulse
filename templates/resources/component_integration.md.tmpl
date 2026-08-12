@@ -10,23 +10,23 @@ description: |-
 
 {{ .Description | trimspace }}
 
-The provider authenticates with the organization's automation key, but Grafana
-receives the much narrower component-bound `secret`. That secret can send
-signals only through this integration. Rollup components cannot have
-integrations.
+The provider authenticates with the organization's automation key, but the
+signal sender receives the much narrower component-bound `secret`. That secret
+can send signals only to the selected component through the selected provider
+adapter.
 
-`source_key` is the immutable identity of one reviewed Grafana mapping. To use
-another key, create another external alert-leaf component and bind the new
-integration there; do not rename a key on an existing leaf. Hierarchical keys
-such as `production/platform/example-service/grafana-rule-001` are supported;
-the exact value must match the Grafana rule's `pulse_alert_key` label.
+`component_id` and `integration_provider` form the immutable natural identity.
+`integration_provider` accepts `grafana`, `pagerduty`, or `pulse`; the attribute
+cannot be named `provider` because Terraform reserves that name. Pulse returns
+the corresponding `/webhooks/components/{component_id}/{provider}` endpoint.
+The component may also receive direct state, own children, and have rollup rules.
 
 Pulse reveals `secret` only when the integration is created, rotated, or
 adopted. Terraform necessarily retains that value in state so it can configure
-a Grafana contact point. Terraform marks it sensitive only to mask display; the
-backend storing state must independently provide encryption, version access
-controls, and retention protections. Rotate the credential if state exposure
-is suspected.
+the corresponding sender or contact point. Terraform marks it sensitive only
+to mask display; the backend storing state must independently provide
+encryption, version access controls, and retention protections. Rotate the
+credential if state exposure is suspected.
 
 {{ if .HasExamples -}}
 ## Example Usage
@@ -48,7 +48,7 @@ non-sensitive and appears in plans.
 
 ## Drift behavior
 
-If Pulse reports a credential version different from the version associated
+If Pulse reports a computed `version` different from the version associated
 with Terraform's stored secret, the provider clears the unusable secret, sets
 `rotation_required`, and warns. Planning is blocked while `rotation_trigger`
 is unchanged. Change it to a new value and apply; the provider never pretends
@@ -64,7 +64,7 @@ destroy from bypassing the ownership transfer and credential rotation.
 
 ## Import and adoption
 
-Import uses the bound component UUID, not the integration UUID:
+Import uses the natural component/provider identity:
 
 {{ codefile "shell" .ImportFile }}
 

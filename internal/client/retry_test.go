@@ -107,7 +107,6 @@ func TestDoRetriesTruncatedSecretResponseAndReturnsRecoveryMetadata(t *testing.T
 				"code": "secret_reissue_required",
 				"error": "unreachable secret must-not-leak",
 				"recovery": {
-					"integration_id": "integration-id",
 					"credential_version_id": "version-id",
 					"revision": 9
 				}
@@ -130,7 +129,7 @@ func TestDoRetriesTruncatedSecretResponseAndReturnsRecoveryMetadata(t *testing.T
 	if !ok {
 		t.Fatalf("error = %v, want secret recovery metadata", err)
 	}
-	if metadata.IntegrationID != "integration-id" || metadata.CredentialVersionID != "version-id" || metadata.Revision != 9 {
+	if metadata.CredentialVersionID != "version-id" || metadata.Revision != 9 {
 		t.Fatalf("metadata = %#v", metadata)
 	}
 	if strings.Contains(err.Error(), "must-not-leak") {

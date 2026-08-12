@@ -36,7 +36,6 @@ output "example_service_external_key" {
 - `configuration_revision` (Number) Component configuration revision.
 - `external_key` (String) Immutable organization-unique automation key.
 - `filter_tag_ids` (Set of String) Organization filter-tag UUIDs assigned to the component.
-- `kind` (String) Component kind: `external` or `rollup`.
 - `name` (String) Human-readable display name. Names may be duplicated.
 - `owner_team_id` (String) Owning team UUID, when assigned.
 - `relevance_tag_ids` (Set of String) Organization relevance-tag UUIDs assigned to the component.

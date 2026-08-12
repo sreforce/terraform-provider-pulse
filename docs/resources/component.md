@@ -10,8 +10,12 @@ description: |-
 
 Manages one organization-scoped Pulse component. Deleting the Terraform resource archives the component and preserves its operational history.
 
-Runtime state is read from Pulse but is computed-only, so Grafana signals do
+Runtime state is read from Pulse but is computed-only, so ingestion signals do
 not create Terraform configuration drift.
+
+Components do not have separate signal-receiving and rollup modes. The same
+component may receive direct signals, own children, and have static rollup
+rules. Those capabilities do not require replacing the component.
 
 Display names may repeat. `external_key` is the stable, organization-unique
 automation identity. Pulse uses it to recover a lost create response and to
@@ -25,7 +29,6 @@ history. Import uses the Pulse component UUID.
 ```terraform
 resource "pulse_component" "example_service" {
   external_key      = "production/platform/example-service"
-  kind              = "rollup"
   name              = "Example service"
   component_type_id = data.pulse_component_type.service.id
   owner_team_id     = data.pulse_team.platform.id
@@ -40,12 +43,11 @@ resource "pulse_component" "example_service" {
 
 - `component_type_id` (String) UUID of an existing component type in the authenticated organization.
 - `external_key` (String) Organization-unique, immutable automation identity. Display names may be duplicated; this key may not.
-- `kind` (String) Immutable component mode. Must be `external` for a signal-receiving leaf or `rollup` for an aggregate. Changing it also requires a new `external_key`.
 - `name` (String) Human-readable component name. Names are intentionally not unique.
 
 ### Optional
 
-- `alert_enabled` (Boolean) Whether the component may initiate Pulse operational alerting. Shadow Grafana mappings should normally leave this false.
+- `alert_enabled` (Boolean) Whether the component may initiate Pulse operational alerting. Observability-only components should normally leave this false.
 - `filter_tag_ids` (Set of String) Set of organization filter-tag UUIDs attached to the component.
 - `owner_team_id` (String) Optional UUID of the owning team in the authenticated organization.
 - `relevance_tag_ids` (Set of String) Set of organization relevance-tag UUIDs attached to the component.
