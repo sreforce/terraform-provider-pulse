@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-No provider version has been released yet. Once releases begin, security fixes will target the latest supported minor release unless a wider backport is announced.
+Security fixes target the latest `0.1.x` release unless a wider backport is announced.
 
 ## Reporting a vulnerability
 
