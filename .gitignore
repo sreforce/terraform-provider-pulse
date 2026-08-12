@@ -1,0 +1,14 @@
+.DS_Store
+.idea/
+.terraform/
+*.log
+*.test
+*.tfplan
+*.tfstate
+*.tfstate.*
+*.tmp
+*.swp
+bin/
+coverage.out
+dist/
+.release-private/

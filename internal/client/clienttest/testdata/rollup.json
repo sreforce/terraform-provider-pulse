@@ -1,0 +1,11 @@
+{
+  "parent_component_id": "00000000-0000-4000-8000-000000000102",
+  "rules": [
+    {
+      "child_component_ids": ["00000000-0000-4000-8000-000000000101"],
+      "when_child_yellow": "yellow",
+      "when_child_red": "red"
+    }
+  ],
+  "revision": 3
+}
