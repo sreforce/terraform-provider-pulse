@@ -35,23 +35,20 @@ func TestIntegrationMutationRejectsIncompleteSuccess(t *testing.T) {
 	t.Parallel()
 
 	mock := clienttest.NewServer(t, testToken, clienttest.Expectation{
-		Method:                http.MethodPost,
-		RequestURI:            "/api/automation/v1/components/" + testComponentID + "/integration",
+		Method:                http.MethodPut,
+		RequestURI:            "/api/automation/v1/components/" + testComponentID + "/integrations/grafana",
 		RequireIdempotencyKey: true,
-		RequestBody:           []byte("{\"source\":\"grafana\",\"source_key\":\"example-alert\"}\n"),
+		RequestBody:           []byte("{}\n"),
 		StatusCode:            http.StatusCreated,
 		ResponseBody:          []byte(`{}`),
 	})
 	implementation := newMockClient(t, mock)
 
-	result, err := implementation.CreateComponentIntegration(context.Background(), testComponentID, ComponentIntegrationCreateRequest{
-		Source:    IntegrationSourceGrafana,
-		SourceKey: "example-alert",
-	}, MutationOptions{})
+	result, err := implementation.UpsertComponentIntegration(context.Background(), testComponentID, IntegrationProviderGrafana, ComponentIntegrationUpsertRequest{}, MutationOptions{})
 	if !IsContractError(err) {
 		t.Fatalf("error = %v, want contract error", err)
 	}
-	if result.Secret != nil || result.Integration.ID != "" {
+	if result.Secret != nil || result.Integration.ComponentID != "" {
 		t.Fatalf("invalid success data escaped: %#v", result)
 	}
 }
@@ -61,11 +58,9 @@ func TestIntegrationMutationRejectsMismatchedSecretVersionWithoutLeaking(t *test
 
 	response := []byte(`{
 		"integration": {
-			"id": "00000000-0000-4000-8000-000000000301",
 			"component_id": "00000000-0000-4000-8000-000000000101",
-			"source": "grafana",
-			"source_key": "example-alert",
-			"endpoint": "https://pulse.example.com/webhooks/component-integrations/00000000-0000-4000-8000-000000000301/grafana",
+			"provider": "grafana",
+			"endpoint": "https://pulse.example.com/webhooks/components/00000000-0000-4000-8000-000000000101/grafana",
 			"lifecycle_owner": "automation",
 			"status": "active",
 			"credential_version_id": "expected-version",
@@ -75,18 +70,15 @@ func TestIntegrationMutationRejectsMismatchedSecretVersionWithoutLeaking(t *test
 		"secret": {"value":"plaintext-must-not-leak","version_id":"wrong-version"}
 	}`)
 	mock := clienttest.NewServer(t, testToken, clienttest.Expectation{
-		Method:                http.MethodPost,
-		RequestURI:            "/api/automation/v1/components/" + testComponentID + "/integration",
+		Method:                http.MethodPut,
+		RequestURI:            "/api/automation/v1/components/" + testComponentID + "/integrations/grafana",
 		RequireIdempotencyKey: true,
 		StatusCode:            http.StatusCreated,
 		ResponseBody:          response,
 	})
 	implementation := newMockClient(t, mock)
 
-	result, err := implementation.CreateComponentIntegration(context.Background(), testComponentID, ComponentIntegrationCreateRequest{
-		Source:    IntegrationSourceGrafana,
-		SourceKey: "example-alert",
-	}, MutationOptions{})
+	result, err := implementation.UpsertComponentIntegration(context.Background(), testComponentID, IntegrationProviderGrafana, ComponentIntegrationUpsertRequest{}, MutationOptions{})
 	if !IsContractError(err) {
 		t.Fatalf("error = %v, want contract error", err)
 	}
@@ -99,25 +91,23 @@ func TestIntegrationEndpointRequiresEncryptedTransport(t *testing.T) {
 	t.Parallel()
 
 	integration := ComponentIntegration{
-		ID:                  "00000000-0000-4000-8000-000000000301",
 		ComponentID:         testComponentID,
-		Source:              IntegrationSourceGrafana,
-		SourceKey:           "example-alert",
-		Endpoint:            "http://pulse.example.com/webhooks/component-integrations/00000000-0000-4000-8000-000000000301/grafana",
+		Provider:            IntegrationProviderGrafana,
+		Endpoint:            "http://pulse.example.com/webhooks/components/" + testComponentID + "/grafana",
 		LifecycleOwner:      IntegrationLifecycleOwnerAutomation,
 		Status:              IntegrationStatusActive,
 		CredentialVersionID: "00000000-0000-4000-8000-000000000401",
 		Revision:            1,
 	}
-	if err := validateIntegration(integration, testComponentID, true); !IsContractError(err) {
+	if err := validateIntegration(integration, testComponentID, IntegrationProviderGrafana, true); !IsContractError(err) {
 		t.Fatalf("remote plaintext integration endpoint error = %v, want contract error", err)
 	}
 
-	integration.Endpoint = "http://127.0.0.1:8080/webhooks/component-integrations/00000000-0000-4000-8000-000000000301/grafana"
-	if err := validateIntegration(integration, testComponentID, false); !IsContractError(err) {
+	integration.Endpoint = "http://127.0.0.1:8080/webhooks/components/" + testComponentID + "/grafana"
+	if err := validateIntegration(integration, testComponentID, IntegrationProviderGrafana, false); !IsContractError(err) {
 		t.Fatalf("unapproved loopback endpoint error = %v, want contract error", err)
 	}
-	if err := validateIntegration(integration, testComponentID, true); err != nil {
+	if err := validateIntegration(integration, testComponentID, IntegrationProviderGrafana, true); err != nil {
 		t.Fatalf("explicit loopback development endpoint was rejected: %v", err)
 	}
 }
@@ -125,14 +115,12 @@ func TestIntegrationEndpointRequiresEncryptedTransport(t *testing.T) {
 func TestLostIntegrationSecretRecoverySequence(t *testing.T) {
 	t.Parallel()
 
-	createBody := []byte("{\"source\":\"grafana\",\"source_key\":\"example-alert\"}\n")
+	createBody := []byte("{}\n")
 	rotationResponse := []byte(`{
 		"integration": {
-			"id": "00000000-0000-4000-8000-000000000301",
 			"component_id": "00000000-0000-4000-8000-000000000101",
-			"source": "grafana",
-			"source_key": "example-alert",
-			"endpoint": "https://pulse.example.com/webhooks/component-integrations/00000000-0000-4000-8000-000000000301/grafana",
+			"provider": "grafana",
+			"endpoint": "https://pulse.example.com/webhooks/components/00000000-0000-4000-8000-000000000101/grafana",
 			"lifecycle_owner": "automation",
 			"status": "active",
 			"credential_version_id": "00000000-0000-4000-8000-000000000402",
@@ -146,16 +134,16 @@ func TestLostIntegrationSecretRecoverySequence(t *testing.T) {
 	}`)
 	mock := clienttest.NewServer(t, testToken,
 		clienttest.Expectation{
-			Method:                http.MethodPost,
-			RequestURI:            "/api/automation/v1/components/" + testComponentID + "/integration",
+			Method:                http.MethodPut,
+			RequestURI:            "/api/automation/v1/components/" + testComponentID + "/integrations/grafana",
 			RequireIdempotencyKey: true,
 			RequestBody:           createBody,
 			StatusCode:            http.StatusCreated,
-			ResponseBody:          []byte(`{"integration":{"id":"00000000-0000-4000-8000-000000000301"},"secret":{"value":"unreachable"`),
+			ResponseBody:          []byte(`{"integration":{"component_id":"00000000-0000-4000-8000-000000000101"},"secret":{"value":"unreachable"`),
 		},
 		clienttest.Expectation{
-			Method:                http.MethodPost,
-			RequestURI:            "/api/automation/v1/components/" + testComponentID + "/integration",
+			Method:                http.MethodPut,
+			RequestURI:            "/api/automation/v1/components/" + testComponentID + "/integrations/grafana",
 			RequireIdempotencyKey: true,
 			RequestBody:           createBody,
 			StatusCode:            http.StatusConflict,
@@ -163,7 +151,7 @@ func TestLostIntegrationSecretRecoverySequence(t *testing.T) {
 		},
 		clienttest.Expectation{
 			Method:                http.MethodPost,
-			RequestURI:            "/api/automation/v1/components/" + testComponentID + "/integration/rotate",
+			RequestURI:            "/api/automation/v1/components/" + testComponentID + "/integrations/grafana/rotate",
 			RequireIdempotencyKey: true,
 			IfMatch:               `"1"`,
 			RequestBody:           []byte("{\"revoke_predecessor_immediately\":true}\n"),
@@ -182,15 +170,12 @@ func TestLostIntegrationSecretRecoverySequence(t *testing.T) {
 		t.Fatalf("create client: %v", err)
 	}
 
-	_, err = implementation.CreateComponentIntegration(context.Background(), testComponentID, ComponentIntegrationCreateRequest{
-		Source:    IntegrationSourceGrafana,
-		SourceKey: "example-alert",
-	}, MutationOptions{})
+	_, err = implementation.UpsertComponentIntegration(context.Background(), testComponentID, IntegrationProviderGrafana, ComponentIntegrationUpsertRequest{}, MutationOptions{})
 	recovery, ok := SecretReissueMetadataFromError(err)
 	if !ok || recovery.Revision != 1 {
 		t.Fatalf("create error = %v recovery = %#v", err, recovery)
 	}
-	rotated, err := implementation.RotateComponentIntegration(context.Background(), testComponentID, MutationOptions{
+	rotated, err := implementation.RotateComponentIntegration(context.Background(), testComponentID, IntegrationProviderGrafana, MutationOptions{
 		Revision:                     recovery.Revision,
 		RevokePredecessorImmediately: true,
 	})
@@ -207,5 +192,29 @@ func TestLostIntegrationSecretRecoverySequence(t *testing.T) {
 	}
 	if requests[2].IdempotencyKey == requests[1].IdempotencyKey {
 		t.Fatal("recovery rotation reused the original operation key")
+	}
+}
+
+func TestRollupResponseDoesNotAdoptDynamicIngestionChildren(t *testing.T) {
+	t.Parallel()
+	parentID := "00000000-0000-4000-8000-000000000102"
+	mock := clienttest.NewServer(t, testToken, clienttest.Expectation{
+		Method:     http.MethodGet,
+		RequestURI: "/api/automation/v1/components/" + parentID + "/rollup",
+		StatusCode: http.StatusOK,
+		ResponseBody: []byte(`{
+			"parent_component_id":"00000000-0000-4000-8000-000000000102",
+			"rules":[],
+			"revision":7,
+			"dynamic_ingestion_children":["00000000-0000-4000-8000-000000000199"]
+		}`),
+	})
+	implementation := newMockClient(t, mock)
+	rollup, err := implementation.GetComponentRollup(context.Background(), parentID)
+	if err != nil {
+		t.Fatalf("read static rollup rules: %v", err)
+	}
+	if rollup.Rules == nil || len(rollup.Rules) != 0 || rollup.Revision != 7 {
+		t.Fatalf("static rollup = %#v", rollup)
 	}
 }

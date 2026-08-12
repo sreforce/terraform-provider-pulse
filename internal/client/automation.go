@@ -76,7 +76,7 @@ func (c *Client) CreateComponent(ctx context.Context, payload ComponentCreateReq
 	if err == nil {
 		err = validateComponent(result)
 	}
-	if err == nil && (result.ExternalKey != payload.ExternalKey || result.Kind != payload.Kind) {
+	if err == nil && result.ExternalKey != payload.ExternalKey {
 		err = contractError("component create")
 	}
 	if err != nil {
@@ -195,15 +195,15 @@ func (c *Client) DeleteComponentRollup(ctx context.Context, parentComponentID st
 }
 
 // GetComponentIntegration reads non-secret integration metadata.
-func (c *Client) GetComponentIntegration(ctx context.Context, componentID string) (ComponentIntegration, error) {
+func (c *Client) GetComponentIntegration(ctx context.Context, componentID string, provider IntegrationProvider) (ComponentIntegration, error) {
 	var result ComponentIntegration
-	path, err := componentSubresourcePath(componentID, "integration")
+	path, err := componentIntegrationPath(componentID, provider)
 	if err != nil {
 		return result, err
 	}
 	err = c.get(ctx, path, &result)
 	if err == nil {
-		err = validateIntegration(result, componentID, c.allowInsecureHTTP)
+		err = validateIntegration(result, componentID, provider, c.allowInsecureHTTP)
 	}
 	if err != nil {
 		return ComponentIntegration{}, err
@@ -211,23 +211,21 @@ func (c *Client) GetComponentIntegration(ctx context.Context, componentID string
 	return result, err
 }
 
-// CreateComponentIntegration binds one Grafana source key and returns its
-// plaintext credential only in this successful response.
-func (c *Client) CreateComponentIntegration(ctx context.Context, componentID string, payload ComponentIntegrationCreateRequest, options MutationOptions) (ComponentIntegrationMutation, error) {
+// UpsertComponentIntegration creates or restores one provider binding. Setting
+// adopt explicitly transfers a human-owned binding to automation atomically.
+func (c *Client) UpsertComponentIntegration(ctx context.Context, componentID string, provider IntegrationProvider, payload ComponentIntegrationUpsertRequest, options MutationOptions) (ComponentIntegrationMutation, error) {
 	var result ComponentIntegrationMutation
-	if err := requireCreateOptions(options); err != nil {
-		return result, err
-	}
-	path, err := componentSubresourcePath(componentID, "integration")
+	path, err := componentIntegrationPath(componentID, provider)
 	if err != nil {
 		return result, err
 	}
-	err = c.mutate(ctx, http.MethodPost, path, payload, noPrecondition, &result)
-	if err == nil {
-		err = validateIntegrationMutation(result, componentID, c.allowInsecureHTTP)
+	precondition, err := upsertRevisionPrecondition(options)
+	if err != nil {
+		return result, err
 	}
-	if err == nil && (result.Integration.Source != payload.Source || result.Integration.SourceKey != payload.SourceKey) {
-		err = contractError("component integration create")
+	err = c.mutate(ctx, http.MethodPut, path, payload, precondition, &result)
+	if err == nil {
+		err = validateIntegrationMutation(result, componentID, provider, c.allowInsecureHTTP)
 	}
 	if err != nil {
 		result = ComponentIntegrationMutation{}
@@ -237,24 +235,15 @@ func (c *Client) CreateComponentIntegration(ctx context.Context, componentID str
 
 // RotateComponentIntegration issues a successor credential and revokes the
 // predecessor according to Pulse's bounded overlap policy.
-func (c *Client) RotateComponentIntegration(ctx context.Context, componentID string, options MutationOptions) (ComponentIntegrationMutation, error) {
-	return c.mutateIntegrationAction(ctx, componentID, "rotate", options, struct {
+func (c *Client) RotateComponentIntegration(ctx context.Context, componentID string, provider IntegrationProvider, options MutationOptions) (ComponentIntegrationMutation, error) {
+	return c.mutateIntegrationAction(ctx, componentID, provider, "rotate", options, struct {
 		RevokePredecessorImmediately bool `json:"revoke_predecessor_immediately,omitempty"`
 	}{RevokePredecessorImmediately: options.RevokePredecessorImmediately})
 }
 
-// AdoptComponentIntegration atomically transfers lifecycle ownership to
-// automation and rotates the credential.
-func (c *Client) AdoptComponentIntegration(ctx context.Context, componentID string, options MutationOptions) (ComponentIntegrationMutation, error) {
-	if options.RevokePredecessorImmediately {
-		return ComponentIntegrationMutation{}, errors.New("pulse adoption controls predecessor revocation server-side")
-	}
-	return c.mutateIntegrationAction(ctx, componentID, "adopt", options, nil)
-}
-
 // DeleteComponentIntegration archives the binding and disables ingress.
-func (c *Client) DeleteComponentIntegration(ctx context.Context, componentID string, options MutationOptions) error {
-	path, err := componentSubresourcePath(componentID, "integration")
+func (c *Client) DeleteComponentIntegration(ctx context.Context, componentID string, provider IntegrationProvider, options MutationOptions) error {
+	path, err := componentIntegrationPath(componentID, provider)
 	if err != nil {
 		return err
 	}
@@ -265,24 +254,32 @@ func (c *Client) DeleteComponentIntegration(ctx context.Context, componentID str
 	return c.mutate(ctx, http.MethodDelete, path, nil, precondition, nil)
 }
 
-func (c *Client) mutateIntegrationAction(ctx context.Context, componentID string, action string, options MutationOptions, payload any) (ComponentIntegrationMutation, error) {
+func (c *Client) mutateIntegrationAction(ctx context.Context, componentID string, provider IntegrationProvider, action string, options MutationOptions, payload any) (ComponentIntegrationMutation, error) {
 	var result ComponentIntegrationMutation
-	path, err := componentSubresourcePath(componentID, "integration/"+action)
+	path, err := componentIntegrationPath(componentID, provider)
 	if err != nil {
 		return result, err
 	}
+	path += "/" + action
 	precondition, err := revisionPrecondition(options)
 	if err != nil {
 		return result, err
 	}
 	err = c.mutate(ctx, http.MethodPost, path, payload, precondition, &result)
 	if err == nil {
-		err = validateIntegrationMutation(result, componentID, c.allowInsecureHTTP)
+		err = validateIntegrationMutation(result, componentID, provider, c.allowInsecureHTTP)
 	}
 	if err != nil {
 		result = ComponentIntegrationMutation{}
 	}
 	return result, err
+}
+
+func componentIntegrationPath(componentID string, provider IntegrationProvider) (string, error) {
+	if !validIntegrationProvider(provider) {
+		return "", errors.New("pulse integration provider must be grafana, pagerduty, or pulse")
+	}
+	return componentSubresourcePath(componentID, "integrations/"+string(provider))
 }
 
 func (c *Client) get(ctx context.Context, path string, result any) error {
@@ -359,6 +356,16 @@ func createOrRevisionPrecondition(options MutationOptions) (mutationPrecondition
 	}
 	if options.Revision == 0 {
 		return mutationPrecondition{createOnly: true}, nil
+	}
+	return mutationPrecondition{revision: options.Revision}, nil
+}
+
+func upsertRevisionPrecondition(options MutationOptions) (mutationPrecondition, error) {
+	if options.RevokePredecessorImmediately || options.Revision < 0 {
+		return mutationPrecondition{}, errors.New("pulse integration upsert mutation options are invalid")
+	}
+	if options.Revision == 0 {
+		return noPrecondition, nil
 	}
 	return mutationPrecondition{revision: options.Revision}, nil
 }

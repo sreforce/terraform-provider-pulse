@@ -16,7 +16,6 @@ type componentDataSource struct {
 type componentDataSourceModel struct {
 	ID                    types.String `tfsdk:"id"`
 	ExternalKey           types.String `tfsdk:"external_key"`
-	Kind                  types.String `tfsdk:"kind"`
 	Name                  types.String `tfsdk:"name"`
 	ComponentTypeID       types.String `tfsdk:"component_type_id"`
 	OwnerTeamID           types.String `tfsdk:"owner_team_id"`
@@ -54,10 +53,6 @@ func (d *componentDataSource) Schema(
 			},
 			"external_key": schema.StringAttribute{
 				MarkdownDescription: "Immutable organization-unique automation key.",
-				Computed:            true,
-			},
-			"kind": schema.StringAttribute{
-				MarkdownDescription: "Component kind: `external` or `rollup`.",
 				Computed:            true,
 			},
 			"name": schema.StringAttribute{
@@ -147,7 +142,6 @@ func (d *componentDataSource) Read(
 
 	data.ID = types.StringValue(component.ID)
 	data.ExternalKey = types.StringValue(component.ExternalKey)
-	data.Kind = types.StringValue(string(component.Kind))
 	data.Name = types.StringValue(component.Name)
 	data.ComponentTypeID = types.StringValue(component.ComponentTypeID)
 	data.OwnerTeamID = stringValueOrNull(component.OwnerTeamID)

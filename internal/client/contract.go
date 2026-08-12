@@ -59,9 +59,6 @@ func validateComponent(value Component) error {
 	if value.ID == "" || value.ExternalKey == "" || value.Name == "" || value.ComponentTypeID == "" || value.RelevanceTagIDs == nil || value.FilterTagIDs == nil || value.Revision <= 0 || value.ArchivedAt != nil {
 		return contractError("component")
 	}
-	if value.Kind != ComponentKindExternal && value.Kind != ComponentKindRollup {
-		return contractError("component")
-	}
 	switch value.State {
 	case ComponentStateUnknown, ComponentStateGreen, ComponentStateYellow, ComponentStateRed:
 	default:
@@ -99,8 +96,8 @@ func validRollupEffect(value RollupEffect) bool {
 	return value == RollupEffectNone || value == RollupEffectYellow || value == RollupEffectRed
 }
 
-func validateIntegration(value ComponentIntegration, expectedComponentID string, allowInsecureHTTP bool) error {
-	if value.ID == "" || value.ComponentID != expectedComponentID || value.Source != IntegrationSourceGrafana || value.SourceKey == "" || value.CredentialVersionID == "" || value.Revision <= 0 || value.ArchivedAt != nil {
+func validateIntegration(value ComponentIntegration, expectedComponentID string, expectedProvider IntegrationProvider, allowInsecureHTTP bool) error {
+	if value.ComponentID != expectedComponentID || value.Provider != expectedProvider || !validIntegrationProvider(value.Provider) || value.CredentialVersionID == "" || value.Revision <= 0 || value.ArchivedAt != nil {
 		return contractError("component integration")
 	}
 	if value.LifecycleOwner != IntegrationLifecycleOwnerHuman && value.LifecycleOwner != IntegrationLifecycleOwnerAutomation {
@@ -116,15 +113,15 @@ func validateIntegration(value ComponentIntegration, expectedComponentID string,
 	if endpoint.Scheme == "http" && (!allowInsecureHTTP || !isLoopbackHost(endpoint.Hostname())) {
 		return contractError("component integration")
 	}
-	expectedSuffix := "/webhooks/component-integrations/" + value.ID + "/grafana"
+	expectedSuffix := "/webhooks/components/" + value.ComponentID + "/" + string(value.Provider)
 	if !strings.HasSuffix(endpoint.Path, expectedSuffix) {
 		return contractError("component integration")
 	}
 	return nil
 }
 
-func validateIntegrationMutation(value ComponentIntegrationMutation, expectedComponentID string, allowInsecureHTTP bool) error {
-	if err := validateIntegration(value.Integration, expectedComponentID, allowInsecureHTTP); err != nil {
+func validateIntegrationMutation(value ComponentIntegrationMutation, expectedComponentID string, expectedProvider IntegrationProvider, allowInsecureHTTP bool) error {
+	if err := validateIntegration(value.Integration, expectedComponentID, expectedProvider, allowInsecureHTTP); err != nil {
 		return err
 	}
 	if value.Integration.LifecycleOwner != IntegrationLifecycleOwnerAutomation || value.Secret == nil {
@@ -134,6 +131,10 @@ func validateIntegrationMutation(value ComponentIntegrationMutation, expectedCom
 		return contractError("component integration mutation")
 	}
 	return nil
+}
+
+func validIntegrationProvider(value IntegrationProvider) bool {
+	return value == IntegrationProviderGrafana || value == IntegrationProviderPagerDuty || value == IntegrationProviderPulse
 }
 
 func containsEmpty(values []string) bool {

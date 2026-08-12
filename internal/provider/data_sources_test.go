@@ -142,7 +142,6 @@ func TestComponentDataSourceReadsByUUIDAndPreservesComputedIdentity(t *testing.T
 		component: client.Component{
 			ID:              "component-1",
 			ExternalKey:     "production/platform/example-service",
-			Kind:            "external",
 			Name:            "Example service",
 			ComponentTypeID: "type-1",
 			OwnerTeamID:     &ownerTeamID,

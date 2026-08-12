@@ -1,10 +1,8 @@
 {
   "integration": {
-    "id": "00000000-0000-4000-8000-000000000301",
     "component_id": "00000000-0000-4000-8000-000000000101",
-    "source": "grafana",
-    "source_key": "example-alert",
-    "endpoint": "https://pulse.example.com/webhooks/component-integrations/00000000-0000-4000-8000-000000000301/grafana",
+    "provider": "grafana",
+    "endpoint": "https://pulse.example.com/webhooks/components/00000000-0000-4000-8000-000000000101/grafana",
     "lifecycle_owner": "automation",
     "status": "active",
     "credential_version_id": "00000000-0000-4000-8000-000000000401",

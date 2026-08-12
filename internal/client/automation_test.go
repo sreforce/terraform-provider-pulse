@@ -21,7 +21,7 @@ func TestCreateComponentUsesCanonicalContract(t *testing.T) {
 		Method:                http.MethodPost,
 		RequestURI:            "/api/automation/v1/components",
 		RequireIdempotencyKey: true,
-		RequestBody:           []byte("{\"external_key\":\"production/platform/example-service\",\"kind\":\"external\",\"name\":\"Example service\",\"component_type_id\":\"00000000-0000-4000-8000-000000000201\",\"owner_team_id\":null,\"relevance_tag_ids\":[],\"filter_tag_ids\":[],\"alert_enabled\":false}\n"),
+		RequestBody:           []byte("{\"external_key\":\"production/platform/example-service\",\"name\":\"Example service\",\"component_type_id\":\"00000000-0000-4000-8000-000000000201\",\"owner_team_id\":null,\"relevance_tag_ids\":[],\"filter_tag_ids\":[],\"alert_enabled\":false}\n"),
 		StatusCode:            http.StatusCreated,
 		ResponseBody:          clienttest.Fixture(t, "component.json"),
 	})
@@ -29,7 +29,6 @@ func TestCreateComponentUsesCanonicalContract(t *testing.T) {
 
 	result, err := implementation.CreateComponent(context.Background(), ComponentCreateRequest{
 		ExternalKey:     "production/platform/example-service",
-		Kind:            ComponentKindExternal,
 		Name:            "Example service",
 		ComponentTypeID: "00000000-0000-4000-8000-000000000201",
 		RelevanceTagIDs: []string{},
@@ -136,15 +135,16 @@ func TestRollupCreateReplaceAndDeletePreconditions(t *testing.T) {
 	}
 }
 
-func TestIntegrationIssueRotateAdoptAndDeleteContract(t *testing.T) {
+func TestIntegrationUpsertRotateAdoptAndDeleteContract(t *testing.T) {
 	t.Parallel()
 
-	createBody := []byte("{\"source\":\"grafana\",\"source_key\":\"example-alert\"}\n")
+	createBody := []byte("{}\n")
+	adoptBody := []byte("{\"adopt\":true}\n")
 	rotateBody := []byte("{\"revoke_predecessor_immediately\":true}\n")
 	mock := clienttest.NewServer(t, testToken,
 		clienttest.Expectation{
-			Method:                http.MethodPost,
-			RequestURI:            "/api/automation/v1/components/" + testComponentID + "/integration",
+			Method:                http.MethodPut,
+			RequestURI:            "/api/automation/v1/components/" + testComponentID + "/integrations/grafana",
 			RequireIdempotencyKey: true,
 			RequestBody:           createBody,
 			StatusCode:            http.StatusCreated,
@@ -152,7 +152,7 @@ func TestIntegrationIssueRotateAdoptAndDeleteContract(t *testing.T) {
 		},
 		clienttest.Expectation{
 			Method:                http.MethodPost,
-			RequestURI:            "/api/automation/v1/components/" + testComponentID + "/integration/rotate",
+			RequestURI:            "/api/automation/v1/components/" + testComponentID + "/integrations/grafana/rotate",
 			RequireIdempotencyKey: true,
 			IfMatch:               `"1"`,
 			RequestBody:           rotateBody,
@@ -160,16 +160,17 @@ func TestIntegrationIssueRotateAdoptAndDeleteContract(t *testing.T) {
 			ResponseBody:          clienttest.Fixture(t, "integration-issued.json"),
 		},
 		clienttest.Expectation{
-			Method:                http.MethodPost,
-			RequestURI:            "/api/automation/v1/components/" + testComponentID + "/integration/adopt",
+			Method:                http.MethodPut,
+			RequestURI:            "/api/automation/v1/components/" + testComponentID + "/integrations/grafana",
 			RequireIdempotencyKey: true,
 			IfMatch:               `"1"`,
+			RequestBody:           adoptBody,
 			StatusCode:            http.StatusOK,
 			ResponseBody:          clienttest.Fixture(t, "integration-issued.json"),
 		},
 		clienttest.Expectation{
 			Method:                http.MethodDelete,
-			RequestURI:            "/api/automation/v1/components/" + testComponentID + "/integration",
+			RequestURI:            "/api/automation/v1/components/" + testComponentID + "/integrations/grafana",
 			RequireIdempotencyKey: true,
 			IfMatch:               `"1"`,
 			StatusCode:            http.StatusNoContent,
@@ -177,23 +178,20 @@ func TestIntegrationIssueRotateAdoptAndDeleteContract(t *testing.T) {
 	)
 	implementation := newMockClient(t, mock)
 
-	issued, err := implementation.CreateComponentIntegration(context.Background(), testComponentID, ComponentIntegrationCreateRequest{
-		Source:    IntegrationSourceGrafana,
-		SourceKey: "example-alert",
-	}, MutationOptions{})
+	issued, err := implementation.UpsertComponentIntegration(context.Background(), testComponentID, IntegrationProviderGrafana, ComponentIntegrationUpsertRequest{}, MutationOptions{})
 	if err != nil {
 		t.Fatalf("create integration: %v", err)
 	}
-	if issued.Integration.SourceKey != "example-alert" || issued.Secret == nil || issued.Secret.Value == "" {
+	if issued.Integration.Provider != IntegrationProviderGrafana || issued.Secret == nil || issued.Secret.Value == "" {
 		t.Fatalf("issued integration = %#v", issued.Integration)
 	}
-	if _, err := implementation.RotateComponentIntegration(context.Background(), testComponentID, MutationOptions{Revision: 1, RevokePredecessorImmediately: true}); err != nil {
+	if _, err := implementation.RotateComponentIntegration(context.Background(), testComponentID, IntegrationProviderGrafana, MutationOptions{Revision: 1, RevokePredecessorImmediately: true}); err != nil {
 		t.Fatalf("rotate integration: %v", err)
 	}
-	if _, err := implementation.AdoptComponentIntegration(context.Background(), testComponentID, MutationOptions{Revision: 1}); err != nil {
+	if _, err := implementation.UpsertComponentIntegration(context.Background(), testComponentID, IntegrationProviderGrafana, ComponentIntegrationUpsertRequest{Adopt: true}, MutationOptions{Revision: 1}); err != nil {
 		t.Fatalf("adopt integration: %v", err)
 	}
-	if err := implementation.DeleteComponentIntegration(context.Background(), testComponentID, MutationOptions{Revision: 1}); err != nil {
+	if err := implementation.DeleteComponentIntegration(context.Background(), testComponentID, IntegrationProviderGrafana, MutationOptions{Revision: 1}); err != nil {
 		t.Fatalf("delete integration: %v", err)
 	}
 
@@ -207,10 +205,31 @@ func TestIntegrationIssueRotateAdoptAndDeleteContract(t *testing.T) {
 	}
 }
 
+func TestIntegrationNaturalPathsSupportEveryProvider(t *testing.T) {
+	t.Parallel()
+	for _, provider := range []IntegrationProvider{
+		IntegrationProviderGrafana,
+		IntegrationProviderPagerDuty,
+		IntegrationProviderPulse,
+	} {
+		path, err := componentIntegrationPath(testComponentID, provider)
+		if err != nil {
+			t.Fatalf("provider %q path: %v", provider, err)
+		}
+		want := "api/automation/v1/components/" + testComponentID + "/integrations/" + string(provider)
+		if path != want {
+			t.Fatalf("provider %q path = %q, want %q", provider, path, want)
+		}
+	}
+	if _, err := componentIntegrationPath(testComponentID, IntegrationProvider("email")); err == nil {
+		t.Fatal("unsupported provider produced an automation API path")
+	}
+}
+
 func TestDomainRetryReusesOneIdempotencyKey(t *testing.T) {
 	t.Parallel()
 
-	body := []byte("{\"external_key\":\"production/platform/example-service\",\"kind\":\"external\",\"name\":\"Example service\",\"component_type_id\":\"00000000-0000-4000-8000-000000000201\",\"owner_team_id\":null,\"relevance_tag_ids\":[],\"filter_tag_ids\":[],\"alert_enabled\":false}\n")
+	body := []byte("{\"external_key\":\"production/platform/example-service\",\"name\":\"Example service\",\"component_type_id\":\"00000000-0000-4000-8000-000000000201\",\"owner_team_id\":null,\"relevance_tag_ids\":[],\"filter_tag_ids\":[],\"alert_enabled\":false}\n")
 	mock := clienttest.NewServer(t, testToken,
 		clienttest.Expectation{
 			Method:                http.MethodPost,
@@ -241,7 +260,6 @@ func TestDomainRetryReusesOneIdempotencyKey(t *testing.T) {
 	}
 	_, err = implementation.CreateComponent(context.Background(), ComponentCreateRequest{
 		ExternalKey:     "production/platform/example-service",
-		Kind:            ComponentKindExternal,
 		Name:            "Example service",
 		ComponentTypeID: "00000000-0000-4000-8000-000000000201",
 		RelevanceTagIDs: []string{},
@@ -319,8 +337,8 @@ func TestMutationOptionsFailClosedBeforeRequest(t *testing.T) {
 	if _, err := implementation.ReplaceComponentRollup(context.Background(), testComponentID, ComponentRollupReplaceRequest{}, MutationOptions{Revision: -1}); err == nil {
 		t.Fatal("rollup replacement accepted a negative revision")
 	}
-	if _, err := implementation.AdoptComponentIntegration(context.Background(), testComponentID, MutationOptions{Revision: 1, RevokePredecessorImmediately: true}); err == nil {
-		t.Fatal("adoption accepted client-controlled predecessor revocation")
+	if _, err := implementation.UpsertComponentIntegration(context.Background(), testComponentID, IntegrationProviderGrafana, ComponentIntegrationUpsertRequest{Adopt: true}, MutationOptions{Revision: 1, RevokePredecessorImmediately: true}); err == nil {
+		t.Fatal("upsert accepted client-controlled predecessor revocation")
 	}
 }
 

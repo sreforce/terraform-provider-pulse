@@ -1,1 +1,1 @@
-terraform import pulse_component_integration.example_alert 11111111-1111-4111-8111-111111111111
+terraform import pulse_component_integration.example_service_grafana 11111111-1111-4111-8111-111111111111/grafana

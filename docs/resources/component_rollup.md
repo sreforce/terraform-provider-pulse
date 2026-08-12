@@ -15,6 +15,12 @@ is significant. `child_component_ids` is an unordered set, and the provider
 canonicalizes those UUIDs before writing and reading state. A child may appear
 in only one rule.
 
+This resource owns only the parent's static, configuration-defined rules.
+Pulse may create immediate children while processing ingestion. Those dynamic
+children and their server-owned edges are intentionally absent from this
+resource, are not deleted by a complete ruleset replacement, and do not create
+Terraform drift.
+
 An empty `rules = []` value is valid. Pulse keeps that rollup in `unknown`
 rather than presenting it as healthy. A configured empty ruleset remains a
 present, revisioned resource; it is distinct from a ruleset that has never been
@@ -30,7 +36,8 @@ stale-revision diagnostic. Refresh, review the change, and plan again.
 resource "pulse_component_rollup" "example_service" {
   parent_component_id = pulse_component.example_service.id
 
-  # Rules are evaluated in this order. Children inside a rule are a set.
+  # Static rules are evaluated in this order. Ingestion-created dynamic
+  # children remain server-managed and are not part of this resource.
   rules = [
     {
       child_component_ids = [

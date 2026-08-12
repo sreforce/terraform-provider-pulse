@@ -9,14 +9,6 @@ import (
 	"time"
 )
 
-// ComponentKind distinguishes signal-receiving leaves from aggregate rollups.
-type ComponentKind string
-
-const (
-	ComponentKindExternal ComponentKind = "external"
-	ComponentKindRollup   ComponentKind = "rollup"
-)
-
 // ComponentState is computed operational state and is never submitted by the
 // Terraform provider.
 type ComponentState string
@@ -124,7 +116,6 @@ func (p *Page[T]) UnmarshalJSON(data []byte) error {
 type Component struct {
 	ID              string         `json:"id"`
 	ExternalKey     string         `json:"external_key"`
-	Kind            ComponentKind  `json:"kind"`
 	Name            string         `json:"name"`
 	ComponentTypeID string         `json:"component_type_id"`
 	OwnerTeamID     *string        `json:"owner_team_id"`
@@ -140,14 +131,13 @@ type Component struct {
 // ComponentCreateRequest contains only desired configuration. Reissuing a
 // create for an archived external_key restores the same Pulse UUID server-side.
 type ComponentCreateRequest struct {
-	ExternalKey     string        `json:"external_key"`
-	Kind            ComponentKind `json:"kind"`
-	Name            string        `json:"name"`
-	ComponentTypeID string        `json:"component_type_id"`
-	OwnerTeamID     *string       `json:"owner_team_id"`
-	RelevanceTagIDs []string      `json:"relevance_tag_ids"`
-	FilterTagIDs    []string      `json:"filter_tag_ids"`
-	AlertEnabled    bool          `json:"alert_enabled"`
+	ExternalKey     string   `json:"external_key"`
+	Name            string   `json:"name"`
+	ComponentTypeID string   `json:"component_type_id"`
+	OwnerTeamID     *string  `json:"owner_team_id"`
+	RelevanceTagIDs []string `json:"relevance_tag_ids"`
+	FilterTagIDs    []string `json:"filter_tag_ids"`
+	AlertEnabled    bool     `json:"alert_enabled"`
 }
 
 // ComponentUpdateRequest replaces the complete Terraform-managed mutable
@@ -189,10 +179,14 @@ type ComponentRollupReplaceRequest struct {
 	Rules []RollupRule `json:"rules"`
 }
 
-// IntegrationSource identifies the accepted signal adapter.
-type IntegrationSource string
+// IntegrationProvider identifies the component-bound signal adapter.
+type IntegrationProvider string
 
-const IntegrationSourceGrafana IntegrationSource = "grafana"
+const (
+	IntegrationProviderGrafana   IntegrationProvider = "grafana"
+	IntegrationProviderPagerDuty IntegrationProvider = "pagerduty"
+	IntegrationProviderPulse     IntegrationProvider = "pulse"
+)
 
 // IntegrationLifecycleOwner protects human-owned integrations from accidental
 // automation takeover.
@@ -213,10 +207,8 @@ const (
 
 // ComponentIntegration is the non-secret integration configuration.
 type ComponentIntegration struct {
-	ID                  string                    `json:"id"`
 	ComponentID         string                    `json:"component_id"`
-	Source              IntegrationSource         `json:"source"`
-	SourceKey           string                    `json:"source_key"`
+	Provider            IntegrationProvider       `json:"provider"`
 	Endpoint            string                    `json:"endpoint"`
 	LifecycleOwner      IntegrationLifecycleOwner `json:"lifecycle_owner"`
 	Status              IntegrationStatus         `json:"status"`
@@ -244,10 +236,10 @@ type ComponentIntegrationMutation struct {
 	Secret      *ComponentIntegrationSecret `json:"secret"`
 }
 
-// ComponentIntegrationCreateRequest binds one stable Grafana mapping identity.
-type ComponentIntegrationCreateRequest struct {
-	Source    IntegrationSource `json:"source"`
-	SourceKey string            `json:"source_key"`
+// ComponentIntegrationUpsertRequest creates, restores, or explicitly adopts
+// the natural (component, provider) integration identity.
+type ComponentIntegrationUpsertRequest struct {
+	Adopt bool `json:"adopt,omitempty"`
 }
 
 // MutationOptions carries the current configuration revision. Idempotency keys
@@ -283,11 +275,10 @@ type RollupAPI interface {
 
 // IntegrationAPI manages a component-bound ingestion integration.
 type IntegrationAPI interface {
-	GetComponentIntegration(context.Context, string) (ComponentIntegration, error)
-	CreateComponentIntegration(context.Context, string, ComponentIntegrationCreateRequest, MutationOptions) (ComponentIntegrationMutation, error)
-	RotateComponentIntegration(context.Context, string, MutationOptions) (ComponentIntegrationMutation, error)
-	AdoptComponentIntegration(context.Context, string, MutationOptions) (ComponentIntegrationMutation, error)
-	DeleteComponentIntegration(context.Context, string, MutationOptions) error
+	GetComponentIntegration(context.Context, string, IntegrationProvider) (ComponentIntegration, error)
+	UpsertComponentIntegration(context.Context, string, IntegrationProvider, ComponentIntegrationUpsertRequest, MutationOptions) (ComponentIntegrationMutation, error)
+	RotateComponentIntegration(context.Context, string, IntegrationProvider, MutationOptions) (ComponentIntegrationMutation, error)
+	DeleteComponentIntegration(context.Context, string, IntegrationProvider, MutationOptions) error
 }
 
 // AutomationAPI is the complete typed client contract. API remains separately

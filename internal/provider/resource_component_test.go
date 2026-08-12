@@ -9,7 +9,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
-	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/sreforce/terraform-provider-pulse/internal/client"
@@ -56,9 +55,11 @@ func TestComponentResourceSchemaSeparatesConfigurationAndRuntimeState(t *testing
 		t.Fatal("external_key must be required and immutable")
 	}
 
-	kind, ok := response.Schema.Attributes["kind"].(schema.StringAttribute)
-	if !ok || !kind.Required || len(kind.PlanModifiers) == 0 {
-		t.Fatal("kind must be a required immutable string")
+	if response.Schema.Version != 1 {
+		t.Fatalf("schema version = %d, want 1", response.Schema.Version)
+	}
+	if _, ok := response.Schema.Attributes["kind"]; ok {
+		t.Fatal("v0 kind discriminator must not remain in the component schema")
 	}
 
 	state, ok := response.Schema.Attributes["state"].(schema.StringAttribute)
@@ -69,65 +70,6 @@ func TestComponentResourceSchemaSeparatesConfigurationAndRuntimeState(t *testing
 	revision, ok := response.Schema.Attributes["configuration_revision"].(schema.Int64Attribute)
 	if !ok || !revision.Computed || revision.Optional || revision.Required {
 		t.Fatal("configuration revision must be computed-only")
-	}
-}
-
-func TestComponentKindValidator(t *testing.T) {
-	t.Parallel()
-
-	for _, value := range []string{"external", "rollup"} {
-		var response validator.StringResponse
-		componentKindValidator{}.ValidateString(context.Background(), validator.StringRequest{ConfigValue: types.StringValue(value)}, &response)
-		if response.Diagnostics.HasError() {
-			t.Fatalf("kind %q returned diagnostics: %v", value, response.Diagnostics)
-		}
-	}
-
-	var response validator.StringResponse
-	componentKindValidator{}.ValidateString(context.Background(), validator.StringRequest{ConfigValue: types.StringValue("service")}, &response)
-	if !response.Diagnostics.HasError() {
-		t.Fatal("unsupported kind must be rejected")
-	}
-}
-
-func TestComponentResourceRejectsKindChangeForSameExternalKey(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	implementation := &ComponentResource{}
-	componentSchema := componentTestSchema(t, implementation)
-
-	current := componentTestModel()
-	current.ID = types.StringValue("component-uuid")
-	current.State = types.StringValue("unknown")
-	current.ConfigurationRevision = types.Int64Value(1)
-	planned := current
-	planned.ID = types.StringUnknown()
-	planned.Kind = types.StringValue("rollup")
-
-	response := resource.ModifyPlanResponse{}
-	implementation.ModifyPlan(ctx, resource.ModifyPlanRequest{
-		State: componentTestState(t, componentSchema, current),
-		Plan:  componentTestPlan(t, componentSchema, planned),
-	}, &response)
-	if !response.Diagnostics.HasError() {
-		t.Fatal("kind-only replacement must be rejected because external_key restores the same immutable component")
-	}
-
-	planned.ExternalKey = types.StringValue("production/platform/example-service/alert-rollup")
-	response = resource.ModifyPlanResponse{}
-	implementation.ModifyPlan(ctx, resource.ModifyPlanRequest{
-		State: componentTestState(t, componentSchema, current),
-		Plan:  componentTestPlan(t, componentSchema, planned),
-	}, &response)
-	if response.Diagnostics.HasError() {
-		t.Fatalf("kind change with a new external_key must be allowed: %v", response.Diagnostics)
-	}
-	var replacement componentResourceModel
-	if diagnostics := response.Plan.Get(ctx, &replacement); diagnostics.HasError() {
-		t.Fatalf("read replacement plan: %v", diagnostics)
-	}
-	if !replacement.ID.IsUnknown() {
-		t.Fatalf("replacement id = %#v, want unknown", replacement.ID)
 	}
 }
 
@@ -172,7 +114,6 @@ func TestComponentResourceCreateUsesExternalKeyAndRemoteIdentity(t *testing.T) {
 	remote := client.Component{
 		ID:              "component-uuid",
 		ExternalKey:     "production/platform/example-service/example-alert",
-		Kind:            "external",
 		Name:            "Example alert",
 		ComponentTypeID: "type-service",
 		OwnerTeamID:     &ownerTeamID,
@@ -239,7 +180,6 @@ func TestComponentResourceCreateRejectsMismatchedRemoteIdentity(t *testing.T) {
 			return client.Component{
 				ID:              "unrelated-component",
 				ExternalKey:     request.ExternalKey + "-other",
-				Kind:            request.Kind,
 				Name:            request.Name,
 				ComponentTypeID: request.ComponentTypeID,
 				State:           "unknown",
@@ -276,7 +216,6 @@ func TestComponentResourceUpdateUsesPriorRevisionAndFullConfiguration(t *testing
 	remote := client.Component{
 		ID:              "component-uuid",
 		ExternalKey:     planned.ExternalKey.ValueString(),
-		Kind:            client.ComponentKind(planned.Kind.ValueString()),
 		Name:            planned.Name.ValueString(),
 		ComponentTypeID: planned.ComponentTypeID.ValueString(),
 		RelevanceTagIDs: []string{"tag-production"},
@@ -336,7 +275,6 @@ func TestComponentResourceReadObservesRuntimeStateWithoutChangingConfiguration(t
 	remote := client.Component{
 		ID:              "component-uuid",
 		ExternalKey:     "production/platform/example-service/example-alert",
-		Kind:            "external",
 		Name:            "Example alert",
 		ComponentTypeID: "type-service",
 		OwnerTeamID:     &ownerTeamID,
@@ -417,7 +355,6 @@ func TestComponentModelNormalizesMissingTagArraysToEmptySets(t *testing.T) {
 	model, diagnostics := componentModelFromRemote(context.Background(), client.Component{
 		ID:              "component-uuid",
 		ExternalKey:     "production/platform/example-service",
-		Kind:            client.ComponentKindRollup,
 		Name:            "Example service",
 		ComponentTypeID: "type-service",
 		AlertEnabled:    false,
@@ -529,7 +466,6 @@ func componentTestModel() componentResourceModel {
 	return componentResourceModel{
 		ID:              types.StringUnknown(),
 		ExternalKey:     types.StringValue("production/platform/example-service/example-alert"),
-		Kind:            types.StringValue("external"),
 		Name:            types.StringValue("Example alert"),
 		ComponentTypeID: types.StringValue("type-service"),
 		OwnerTeamID:     types.StringValue("team-platform"),
@@ -550,7 +486,6 @@ func componentImportStateModel() componentResourceModel {
 	return componentResourceModel{
 		ID:                    types.StringNull(),
 		ExternalKey:           types.StringNull(),
-		Kind:                  types.StringNull(),
 		Name:                  types.StringNull(),
 		ComponentTypeID:       types.StringNull(),
 		OwnerTeamID:           types.StringNull(),

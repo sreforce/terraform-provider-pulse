@@ -2,14 +2,11 @@ package provider
 
 import (
 	"context"
-	"errors"
-	"net/http"
-	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
-	resourceschema "github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-go/tftypes"
@@ -17,601 +14,312 @@ import (
 )
 
 const (
-	testIntegrationComponentID = "11111111-1111-4111-8111-111111111111"
-	testIntegrationID          = "22222222-2222-4222-8222-222222222222"
-	testIntegrationVersionOne  = "33333333-3333-4333-8333-333333333333"
-	testIntegrationVersionTwo  = "44444444-4444-4444-8444-444444444444"
+	integrationTestComponentID = "00000000-0000-4000-8000-000000000101"
+	integrationTestVersion1    = "00000000-0000-4000-8000-000000000401"
+	integrationTestVersion2    = "00000000-0000-4000-8000-000000000402"
 )
 
 type fakeIntegrationAPI struct {
-	get    func(context.Context, string) (client.ComponentIntegration, error)
-	create func(context.Context, string, client.ComponentIntegrationCreateRequest, client.MutationOptions) (client.ComponentIntegrationMutation, error)
-	rotate func(context.Context, string, client.MutationOptions) (client.ComponentIntegrationMutation, error)
-	adopt  func(context.Context, string, client.MutationOptions) (client.ComponentIntegrationMutation, error)
-	delete func(context.Context, string, client.MutationOptions) error
+	get    func(context.Context, string, client.IntegrationProvider) (client.ComponentIntegration, error)
+	upsert func(context.Context, string, client.IntegrationProvider, client.ComponentIntegrationUpsertRequest, client.MutationOptions) (client.ComponentIntegrationMutation, error)
+	rotate func(context.Context, string, client.IntegrationProvider, client.MutationOptions) (client.ComponentIntegrationMutation, error)
+	delete func(context.Context, string, client.IntegrationProvider, client.MutationOptions) error
 }
 
-func (f *fakeIntegrationAPI) GetComponentIntegration(ctx context.Context, componentID string) (client.ComponentIntegration, error) {
-	if f.get == nil {
-		return client.ComponentIntegration{}, errors.New("unexpected GetComponentIntegration call")
-	}
-	return f.get(ctx, componentID)
+func (f *fakeIntegrationAPI) GetComponentIntegration(ctx context.Context, componentID string, provider client.IntegrationProvider) (client.ComponentIntegration, error) {
+	return f.get(ctx, componentID, provider)
+}
+func (f *fakeIntegrationAPI) UpsertComponentIntegration(ctx context.Context, componentID string, provider client.IntegrationProvider, payload client.ComponentIntegrationUpsertRequest, options client.MutationOptions) (client.ComponentIntegrationMutation, error) {
+	return f.upsert(ctx, componentID, provider, payload, options)
+}
+func (f *fakeIntegrationAPI) RotateComponentIntegration(ctx context.Context, componentID string, provider client.IntegrationProvider, options client.MutationOptions) (client.ComponentIntegrationMutation, error) {
+	return f.rotate(ctx, componentID, provider, options)
+}
+func (f *fakeIntegrationAPI) DeleteComponentIntegration(ctx context.Context, componentID string, provider client.IntegrationProvider, options client.MutationOptions) error {
+	return f.delete(ctx, componentID, provider, options)
 }
 
-func (f *fakeIntegrationAPI) CreateComponentIntegration(ctx context.Context, componentID string, request client.ComponentIntegrationCreateRequest, options client.MutationOptions) (client.ComponentIntegrationMutation, error) {
-	if f.create == nil {
-		return client.ComponentIntegrationMutation{}, errors.New("unexpected CreateComponentIntegration call")
-	}
-	return f.create(ctx, componentID, request, options)
-}
-
-func (f *fakeIntegrationAPI) RotateComponentIntegration(ctx context.Context, componentID string, options client.MutationOptions) (client.ComponentIntegrationMutation, error) {
-	if f.rotate == nil {
-		return client.ComponentIntegrationMutation{}, errors.New("unexpected RotateComponentIntegration call")
-	}
-	return f.rotate(ctx, componentID, options)
-}
-
-func (f *fakeIntegrationAPI) AdoptComponentIntegration(ctx context.Context, componentID string, options client.MutationOptions) (client.ComponentIntegrationMutation, error) {
-	if f.adopt == nil {
-		return client.ComponentIntegrationMutation{}, errors.New("unexpected AdoptComponentIntegration call")
-	}
-	return f.adopt(ctx, componentID, options)
-}
-
-func (f *fakeIntegrationAPI) DeleteComponentIntegration(ctx context.Context, componentID string, options client.MutationOptions) error {
-	if f.delete == nil {
-		return errors.New("unexpected DeleteComponentIntegration call")
-	}
-	return f.delete(ctx, componentID, options)
-}
-
-func TestComponentIntegrationResourceSchemaProtectsOneTimeSecret(t *testing.T) {
+func TestComponentIntegrationSchemaV1UsesNaturalIdentity(t *testing.T) {
 	t.Parallel()
-
 	implementation := &componentIntegrationResource{}
-	var response resource.SchemaResponse
-	implementation.Schema(context.Background(), resource.SchemaRequest{}, &response)
-	if diagnostics := response.Schema.ValidateImplementation(context.Background()); diagnostics.HasError() {
-		t.Fatalf("schema implementation diagnostics: %v", diagnostics)
+	got := integrationTestSchema(t, implementation)
+	if got.Version != 1 {
+		t.Fatalf("schema version = %d, want 1", got.Version)
 	}
-
-	secret, ok := response.Schema.Attributes["secret"].(resourceschema.StringAttribute)
-	if !ok || !secret.Computed || !secret.Sensitive || secret.Required || secret.Optional {
-		t.Fatalf("secret schema = %#v, want computed-only sensitive string", response.Schema.Attributes["secret"])
-	}
-	for _, name := range []string{"component_id", "source", "source_key", "rotation_trigger"} {
-		attribute, ok := response.Schema.Attributes[name].(resourceschema.StringAttribute)
-		if !ok || !attribute.Required {
-			t.Fatalf("%s schema = %#v, want required string", name, response.Schema.Attributes[name])
+	for _, name := range []string{"component_id", "integration_provider", "rotation_trigger", "adopt", "endpoint", "secret", "version", "rotation_required", "lifecycle_owner", "revision"} {
+		if _, ok := got.Attributes[name]; !ok {
+			t.Fatalf("missing schema attribute %q", name)
 		}
 	}
-	rotationRequired, ok := response.Schema.Attributes["rotation_required"].(resourceschema.BoolAttribute)
-	if !ok || !rotationRequired.Computed {
-		t.Fatalf("rotation_required schema = %#v, want computed boolean", response.Schema.Attributes["rotation_required"])
+	for _, removed := range []string{"id", "source", "source_key", "observed_version", "status"} {
+		if _, ok := got.Attributes[removed]; ok {
+			t.Fatalf("removed v0 attribute %q is still public", removed)
+		}
 	}
 }
 
-func TestComponentIntegrationSourceKeySupportsStableHierarchyPaths(t *testing.T) {
+func TestComponentIntegrationValidateProviders(t *testing.T) {
 	t.Parallel()
-
-	valid := []string{
-		"production/platform/example-service/example-service-stopped",
-		"grafana:example_service_stopped.v2",
-	}
-	for _, sourceKey := range valid {
-		if !sourceKeyPattern.MatchString(sourceKey) {
-			t.Fatalf("sourceKeyPattern rejected valid key %q", sourceKey)
+	implementation := &componentIntegrationResource{}
+	testSchema := integrationTestSchema(t, implementation)
+	for _, provider := range []string{"grafana", "pagerduty", "pulse"} {
+		model := integrationTestModel(provider)
+		response := resource.ValidateConfigResponse{}
+		implementation.ValidateConfig(context.Background(), resource.ValidateConfigRequest{Config: integrationTestConfig(t, testSchema, model)}, &response)
+		if response.Diagnostics.HasError() {
+			t.Fatalf("provider %q rejected: %v", provider, response.Diagnostics)
 		}
 	}
-
-	invalid := []string{
-		"Production/platform/example-service",
-		"/production/platform/example-service",
-		"production platform/example-service",
-		strings.Repeat("a", 129),
-	}
-	for _, sourceKey := range invalid {
-		if sourceKeyPattern.MatchString(sourceKey) {
-			t.Fatalf("sourceKeyPattern accepted invalid key %q", sourceKey)
-		}
+	invalid := integrationTestModel("email")
+	response := resource.ValidateConfigResponse{}
+	implementation.ValidateConfig(context.Background(), resource.ValidateConfigRequest{Config: integrationTestConfig(t, testSchema, invalid)}, &response)
+	if !response.Diagnostics.HasError() {
+		t.Fatal("unsupported integration provider was accepted")
 	}
 }
 
-func TestComponentIntegrationCreateRecoversLostOneTimeSecret(t *testing.T) {
+func TestComponentIntegrationCreateUpsertsNaturalIdentity(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	remote := componentIntegrationTestRemote(testIntegrationVersionTwo, 2)
-	mutation := integrationTestMutation(remote, "new-component-secret")
-
-	var createRequest client.ComponentIntegrationCreateRequest
-	var rotateOptions client.MutationOptions
-	fake := &fakeIntegrationAPI{
-		create: func(_ context.Context, componentID string, request client.ComponentIntegrationCreateRequest, _ client.MutationOptions) (client.ComponentIntegrationMutation, error) {
-			if componentID != testIntegrationComponentID {
-				t.Fatalf("create component ID = %q", componentID)
-			}
-			createRequest = request
-			return client.ComponentIntegrationMutation{}, &client.ResponseError{
-				StatusCode: http.StatusConflict,
-				Code:       client.ErrorCodeSecretReissueRequired,
-				SecretReissue: &client.SecretReissueMetadata{
-					IntegrationID:       testIntegrationID,
-					CredentialVersionID: testIntegrationVersionOne,
-					Revision:            1,
-				},
-			}
-		},
-		rotate: func(_ context.Context, componentID string, options client.MutationOptions) (client.ComponentIntegrationMutation, error) {
-			if componentID != testIntegrationComponentID {
-				t.Fatalf("rotate component ID = %q", componentID)
-			}
-			rotateOptions = options
-			return mutation, nil
-		},
-	}
+	var gotComponent string
+	var gotProvider client.IntegrationProvider
+	var gotPayload client.ComponentIntegrationUpsertRequest
+	fake := &fakeIntegrationAPI{upsert: func(_ context.Context, componentID string, provider client.IntegrationProvider, payload client.ComponentIntegrationUpsertRequest, options client.MutationOptions) (client.ComponentIntegrationMutation, error) {
+		gotComponent, gotProvider, gotPayload = componentID, provider, payload
+		if options.Revision != 0 {
+			t.Fatalf("create revision = %d, want 0", options.Revision)
+		}
+		return integrationMutation(provider, integrationTestVersion1, 1), nil
+	}}
 	implementation := &componentIntegrationResource{api: fake}
-	schemaValue := componentIntegrationTestSchema(t, implementation)
-	plan := componentIntegrationTestModel()
-	response := resource.CreateResponse{State: tfsdk.State{Schema: schemaValue}}
-	implementation.Create(ctx, resource.CreateRequest{Plan: componentIntegrationTestPlan(t, schemaValue, plan)}, &response)
+	testSchema := integrationTestSchema(t, implementation)
+	plan := integrationTestModel("pagerduty")
+	plan.Adopt = types.BoolValue(true)
+	response := resource.CreateResponse{State: tfsdk.State{Schema: testSchema}}
+	implementation.Create(ctx, resource.CreateRequest{Plan: integrationTestPlan(t, testSchema, plan)}, &response)
 	if response.Diagnostics.HasError() {
 		t.Fatalf("create diagnostics: %v", response.Diagnostics)
 	}
-
-	if string(createRequest.Source) != grafanaIntegrationSource || createRequest.SourceKey != "example-alert" {
-		t.Fatalf("create request = %#v", createRequest)
-	}
-	if rotateOptions.Revision != 1 {
-		t.Fatalf("recovery rotate revision = %d, want 1", rotateOptions.Revision)
-	}
-	if !rotateOptions.RevokePredecessorImmediately {
-		t.Fatal("lost-secret recovery must revoke the unreachable predecessor immediately")
+	if gotComponent != integrationTestComponentID || gotProvider != client.IntegrationProviderPagerDuty || gotPayload.Adopt {
+		t.Fatalf("upsert identity/payload = %q %q %#v", gotComponent, gotProvider, gotPayload)
 	}
 	var state componentIntegrationResourceModel
-	assertIntegrationNoDiagnostics(t, response.State.Get(ctx, &state))
-	if got, want := state.Secret.ValueString(), "new-component-secret"; got != want {
-		t.Fatalf("secret = %q, want %q", got, want)
-	}
-	if got, want := state.ObservedVersion.ValueString(), testIntegrationVersionTwo; got != want {
-		t.Fatalf("observed version = %q, want %q", got, want)
-	}
-	if state.RotationRequired.ValueBool() {
-		t.Fatal("successful secret reissue must clear rotation_required")
+	response.State.Get(ctx, &state)
+	if state.IntegrationProvider.ValueString() != "pagerduty" || state.Version.ValueString() != integrationTestVersion1 || state.Secret.ValueString() != "one-time-secret" {
+		t.Fatalf("created state = %#v", state)
 	}
 }
 
-func TestComponentIntegrationReadPreservesMatchingSecret(t *testing.T) {
+func TestComponentIntegrationCreateExplicitAdoptionUsesObservedRevision(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	remote := componentIntegrationTestRemote(testIntegrationVersionOne, 8)
-	current := componentIntegrationTestModel()
-	current.ID = types.StringValue(testIntegrationID)
-	current.Endpoint = types.StringValue(remote.Endpoint)
-	current.Secret = types.StringValue("stored-secret")
-	current.ObservedVersion = types.StringValue(testIntegrationVersionOne)
-	current.RotationRequired = types.BoolValue(false)
-	current.LifecycleOwner = types.StringValue("automation")
-	current.Revision = types.Int64Value(7)
-	current.Status = types.StringValue("active")
-
-	implementation := &componentIntegrationResource{api: &fakeIntegrationAPI{
-		get: func(_ context.Context, componentID string) (client.ComponentIntegration, error) {
-			if componentID != testIntegrationComponentID {
-				t.Fatalf("read component ID = %q", componentID)
+	upserts := 0
+	fake := &fakeIntegrationAPI{
+		upsert: func(_ context.Context, _ string, provider client.IntegrationProvider, payload client.ComponentIntegrationUpsertRequest, options client.MutationOptions) (client.ComponentIntegrationMutation, error) {
+			upserts++
+			if upserts == 1 {
+				if payload.Adopt || options.Revision != 0 {
+					t.Fatalf("initial upsert was not a safe non-adopting create: %#v %#v", payload, options)
+				}
+				return client.ComponentIntegrationMutation{}, &client.ResponseError{StatusCode: 409, Code: client.ErrorCodeOwnershipConflict}
 			}
-			return remote, nil
+			if !payload.Adopt || options.Revision != 8 || provider != client.IntegrationProviderGrafana {
+				t.Fatalf("guarded adoption = provider %q payload %#v options %#v", provider, payload, options)
+			}
+			return integrationMutation(provider, integrationTestVersion2, 9), nil
 		},
+		get: func(context.Context, string, client.IntegrationProvider) (client.ComponentIntegration, error) {
+			metadata := integrationMetadata(client.IntegrationProviderGrafana, integrationTestVersion1, 8)
+			metadata.LifecycleOwner = client.IntegrationLifecycleOwnerHuman
+			return metadata, nil
+		},
+	}
+	implementation := &componentIntegrationResource{api: fake}
+	testSchema := integrationTestSchema(t, implementation)
+	plan := integrationTestModel("grafana")
+	plan.Adopt = types.BoolValue(true)
+	response := resource.CreateResponse{State: tfsdk.State{Schema: testSchema}}
+	implementation.Create(ctx, resource.CreateRequest{Plan: integrationTestPlan(t, testSchema, plan)}, &response)
+	if response.Diagnostics.HasError() || upserts != 2 {
+		t.Fatalf("adoption diagnostics=%v upserts=%d", response.Diagnostics, upserts)
+	}
+}
+
+func TestComponentIntegrationReadDetectsOutOfBandVersion(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	fake := &fakeIntegrationAPI{get: func(context.Context, string, client.IntegrationProvider) (client.ComponentIntegration, error) {
+		return integrationMetadata(client.IntegrationProviderGrafana, integrationTestVersion2, 2), nil
 	}}
-	schemaValue := componentIntegrationTestSchema(t, implementation)
-	response := resource.ReadResponse{State: componentIntegrationTestState(t, schemaValue, current)}
-	implementation.Read(ctx, resource.ReadRequest{State: componentIntegrationTestState(t, schemaValue, current)}, &response)
+	implementation := &componentIntegrationResource{api: fake}
+	testSchema := integrationTestSchema(t, implementation)
+	state := integrationStateModel("grafana", integrationTestVersion1, 1)
+	response := resource.ReadResponse{State: integrationTestState(t, testSchema, state)}
+	implementation.Read(ctx, resource.ReadRequest{State: integrationTestState(t, testSchema, state)}, &response)
 	if response.Diagnostics.HasError() {
 		t.Fatalf("read diagnostics: %v", response.Diagnostics)
 	}
 	var refreshed componentIntegrationResourceModel
-	assertIntegrationNoDiagnostics(t, response.State.Get(ctx, &refreshed))
-	if got, want := refreshed.Secret.ValueString(), "stored-secret"; got != want {
-		t.Fatalf("matching secret = %q, want %q", got, want)
-	}
-	if got, want := refreshed.Revision.ValueInt64(), int64(8); got != want {
-		t.Fatalf("revision = %d, want %d", got, want)
+	response.State.Get(ctx, &refreshed)
+	if !refreshed.Secret.IsNull() || !refreshed.RotationRequired.ValueBool() || refreshed.Version.ValueString() != integrationTestVersion2 {
+		t.Fatalf("drift state = %#v", refreshed)
 	}
 }
 
-func TestComponentIntegrationReadMarksOutOfBandVersionForRotation(t *testing.T) {
+func TestComponentIntegrationUpdateRotatesAndAdoptsWithProvider(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	remote := componentIntegrationTestRemote(testIntegrationVersionTwo, 9)
-	current := componentIntegrationTestModel()
-	current.ID = types.StringValue(testIntegrationID)
-	current.Endpoint = types.StringValue(remote.Endpoint)
-	current.Secret = types.StringValue("now-stale-secret")
-	current.ObservedVersion = types.StringValue(testIntegrationVersionOne)
-	current.RotationRequired = types.BoolValue(false)
-	current.LifecycleOwner = types.StringValue("automation")
-	current.Revision = types.Int64Value(8)
-	current.Status = types.StringValue("active")
-
-	implementation := &componentIntegrationResource{api: &fakeIntegrationAPI{
-		get: func(context.Context, string) (client.ComponentIntegration, error) { return remote, nil },
-	}}
-	schemaValue := componentIntegrationTestSchema(t, implementation)
-	response := resource.ReadResponse{State: componentIntegrationTestState(t, schemaValue, current)}
-	implementation.Read(ctx, resource.ReadRequest{State: componentIntegrationTestState(t, schemaValue, current)}, &response)
-	if response.Diagnostics.HasError() {
-		t.Fatalf("version drift must warn without aborting refresh: %v", response.Diagnostics)
-	}
-	if response.Diagnostics.WarningsCount() != 1 {
-		t.Fatalf("warning count = %d, want 1", response.Diagnostics.WarningsCount())
-	}
-	var refreshed componentIntegrationResourceModel
-	assertIntegrationNoDiagnostics(t, response.State.Get(ctx, &refreshed))
-	if !refreshed.Secret.IsNull() {
-		t.Fatalf("drifted secret = %#v, want null", refreshed.Secret)
-	}
-	if !refreshed.RotationRequired.ValueBool() {
-		t.Fatal("version drift must set rotation_required")
-	}
-	if got, want := refreshed.ObservedVersion.ValueString(), testIntegrationVersionTwo; got != want {
-		t.Fatalf("observed version = %q, want %q", got, want)
-	}
+	t.Run("rotate", func(t *testing.T) {
+		var called bool
+		fake := &fakeIntegrationAPI{rotate: func(_ context.Context, componentID string, provider client.IntegrationProvider, options client.MutationOptions) (client.ComponentIntegrationMutation, error) {
+			called = componentID == integrationTestComponentID && provider == client.IntegrationProviderPulse && options.Revision == 4
+			return integrationMutation(provider, integrationTestVersion2, 5), nil
+		}}
+		implementation := &componentIntegrationResource{api: fake}
+		testSchema := integrationTestSchema(t, implementation)
+		state := integrationStateModel("pulse", integrationTestVersion1, 4)
+		plan := state
+		plan.RotationTrigger = types.StringValue("2026-08-rotate")
+		plan.Secret, plan.Version, plan.Revision = types.StringUnknown(), types.StringUnknown(), types.Int64Unknown()
+		response := resource.UpdateResponse{State: tfsdk.State{Schema: testSchema}}
+		implementation.Update(ctx, resource.UpdateRequest{State: integrationTestState(t, testSchema, state), Plan: integrationTestPlan(t, testSchema, plan)}, &response)
+		if response.Diagnostics.HasError() || !called {
+			t.Fatalf("rotate diagnostics=%v called=%v", response.Diagnostics, called)
+		}
+	})
+	t.Run("adopt", func(t *testing.T) {
+		var adopted bool
+		fake := &fakeIntegrationAPI{upsert: func(_ context.Context, _ string, provider client.IntegrationProvider, payload client.ComponentIntegrationUpsertRequest, options client.MutationOptions) (client.ComponentIntegrationMutation, error) {
+			adopted = provider == client.IntegrationProviderGrafana && payload.Adopt && options.Revision == 3
+			return integrationMutation(provider, integrationTestVersion2, 4), nil
+		}}
+		implementation := &componentIntegrationResource{api: fake}
+		testSchema := integrationTestSchema(t, implementation)
+		state := integrationStateModel("grafana", integrationTestVersion1, 3)
+		state.LifecycleOwner = types.StringValue("human")
+		plan := state
+		plan.Adopt = types.BoolValue(true)
+		plan.Secret, plan.Version, plan.Revision = types.StringUnknown(), types.StringUnknown(), types.Int64Unknown()
+		response := resource.UpdateResponse{State: tfsdk.State{Schema: testSchema}}
+		implementation.Update(ctx, resource.UpdateRequest{State: integrationTestState(t, testSchema, state), Plan: integrationTestPlan(t, testSchema, plan)}, &response)
+		if response.Diagnostics.HasError() || !adopted {
+			t.Fatalf("adopt diagnostics=%v called=%v", response.Diagnostics, adopted)
+		}
+	})
 }
 
-func TestComponentIntegrationModifyPlanBlocksUntilRotationTriggerChanges(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	implementation := &componentIntegrationResource{}
-	schemaValue := componentIntegrationTestSchema(t, implementation)
-	state := componentIntegrationTestModel()
-	state.ID = types.StringValue(testIntegrationID)
-	state.Endpoint = types.StringValue("https://pulse.example.test/webhooks/component-integrations/" + testIntegrationID + "/grafana")
-	state.Secret = types.StringNull()
-	state.ObservedVersion = types.StringValue(testIntegrationVersionTwo)
-	state.RotationRequired = types.BoolValue(true)
-	state.LifecycleOwner = types.StringValue("automation")
-	state.Revision = types.Int64Value(9)
-	state.Status = types.StringValue("active")
-
-	unchanged := state
-	blocked := resource.ModifyPlanResponse{Plan: componentIntegrationTestPlan(t, schemaValue, unchanged)}
-	implementation.ModifyPlan(ctx, resource.ModifyPlanRequest{
-		State: componentIntegrationTestState(t, schemaValue, state),
-		Plan:  componentIntegrationTestPlan(t, schemaValue, unchanged),
-	}, &blocked)
-	if !blocked.Diagnostics.HasError() {
-		t.Fatal("unchanged rotation_trigger must block planning when rotation_required is true")
-	}
-
-	changed := state
-	changed.RotationTrigger = types.StringValue("2026-09-rotate")
-	allowed := resource.ModifyPlanResponse{Plan: componentIntegrationTestPlan(t, schemaValue, changed)}
-	implementation.ModifyPlan(ctx, resource.ModifyPlanRequest{
-		State: componentIntegrationTestState(t, schemaValue, state),
-		Plan:  componentIntegrationTestPlan(t, schemaValue, changed),
-	}, &allowed)
-	if allowed.Diagnostics.HasError() {
-		t.Fatalf("changed rotation_trigger diagnostics: %v", allowed.Diagnostics)
-	}
-	var planned componentIntegrationResourceModel
-	assertIntegrationNoDiagnostics(t, allowed.Plan.Get(ctx, &planned))
-	if !planned.Secret.IsUnknown() || !planned.RotationRequired.IsUnknown() {
-		t.Fatalf("rotation outputs must be unknown: secret=%#v rotation_required=%#v", planned.Secret, planned.RotationRequired)
-	}
-}
-
-func TestComponentIntegrationModifyPlanRejectsSourceKeyChangeOnSameLeaf(t *testing.T) {
+func TestComponentIntegrationImportUsesComponentAndProvider(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	implementation := &componentIntegrationResource{}
-	schemaValue := componentIntegrationTestSchema(t, implementation)
-	state := componentIntegrationTestModel()
-	state.ID = types.StringValue(testIntegrationID)
-	state.Endpoint = types.StringValue("https://pulse.example.test/webhooks/component-integrations/" + testIntegrationID + "/grafana")
-	state.Secret = types.StringValue("stored-secret")
-	state.ObservedVersion = types.StringValue(testIntegrationVersionOne)
-	state.RotationRequired = types.BoolValue(false)
-	state.LifecycleOwner = types.StringValue("automation")
-	state.Revision = types.Int64Value(3)
-	state.Status = types.StringValue("active")
-	planned := state
-	planned.SourceKey = types.StringValue("different-alert-mapping")
-
-	response := resource.ModifyPlanResponse{Plan: componentIntegrationTestPlan(t, schemaValue, planned)}
-	implementation.ModifyPlan(ctx, resource.ModifyPlanRequest{
-		State: componentIntegrationTestState(t, schemaValue, state),
-		Plan:  componentIntegrationTestPlan(t, schemaValue, planned),
-	}, &response)
-	if !response.Diagnostics.HasError() {
-		t.Fatal("source_key change on the same component must require a new alert leaf")
-	}
-}
-
-func TestComponentIntegrationModifyPlanRejectsHumanOwnedDestroy(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	implementation := &componentIntegrationResource{}
-	schemaValue := componentIntegrationTestSchema(t, implementation)
-	state := componentIntegrationTestModel()
-	state.ID = types.StringValue(testIntegrationID)
-	state.Endpoint = types.StringValue("https://pulse.example.test/webhooks/component-integrations/" + testIntegrationID + "/grafana")
-	state.Secret = types.StringValue("stored-secret")
-	state.ObservedVersion = types.StringValue(testIntegrationVersionOne)
-	state.RotationRequired = types.BoolValue(false)
-	state.LifecycleOwner = types.StringValue("human")
-	state.Revision = types.Int64Value(3)
-	state.Status = types.StringValue("active")
-	nullPlan := tfsdk.Plan{
-		Schema: schemaValue,
-		Raw:    tftypes.NewValue(schemaValue.Type().TerraformType(ctx), nil),
-	}
-	response := resource.ModifyPlanResponse{Plan: nullPlan}
-	implementation.ModifyPlan(ctx, resource.ModifyPlanRequest{
-		State: componentIntegrationTestState(t, schemaValue, state),
-		Plan:  nullPlan,
-	}, &response)
-	if !response.Diagnostics.HasError() {
-		t.Fatal("human-owned integration destroy must require a completed adoption")
-	}
-
-	state.LifecycleOwner = types.StringValue("automation")
-	allowed := resource.ModifyPlanResponse{Plan: nullPlan}
-	implementation.ModifyPlan(ctx, resource.ModifyPlanRequest{
-		State: componentIntegrationTestState(t, schemaValue, state),
-		Plan:  nullPlan,
-	}, &allowed)
-	if allowed.Diagnostics.HasError() {
-		t.Fatalf("automation-owned integration destroy diagnostics: %v", allowed.Diagnostics)
-	}
-}
-
-func TestComponentIntegrationUpdateRotatesAndUsesCurrentRevision(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	current := componentIntegrationTestModel()
-	current.ID = types.StringValue(testIntegrationID)
-	current.Endpoint = types.StringValue("https://pulse.example.test/webhooks/component-integrations/" + testIntegrationID + "/grafana")
-	current.Secret = types.StringValue("old-secret")
-	current.ObservedVersion = types.StringValue(testIntegrationVersionOne)
-	current.RotationRequired = types.BoolValue(false)
-	current.LifecycleOwner = types.StringValue("automation")
-	current.Revision = types.Int64Value(4)
-	current.Status = types.StringValue("active")
-	planned := current
-	planned.RotationTrigger = types.StringValue("2026-09-rotate")
-	planned.Secret = types.StringUnknown()
-	planned.ObservedVersion = types.StringUnknown()
-	planned.RotationRequired = types.BoolUnknown()
-	planned.Revision = types.Int64Unknown()
-
-	var captured client.MutationOptions
-	remote := componentIntegrationTestRemote(testIntegrationVersionTwo, 5)
-	implementation := &componentIntegrationResource{api: &fakeIntegrationAPI{
-		rotate: func(_ context.Context, componentID string, options client.MutationOptions) (client.ComponentIntegrationMutation, error) {
-			if componentID != testIntegrationComponentID {
-				t.Fatalf("rotate component ID = %q", componentID)
-			}
-			captured = options
-			return integrationTestMutation(remote, "rotated-secret"), nil
-		},
-	}}
-	schemaValue := componentIntegrationTestSchema(t, implementation)
-	response := resource.UpdateResponse{State: tfsdk.State{Schema: schemaValue}}
-	implementation.Update(ctx, resource.UpdateRequest{
-		State: componentIntegrationTestState(t, schemaValue, current),
-		Plan:  componentIntegrationTestPlan(t, schemaValue, planned),
-	}, &response)
-	if response.Diagnostics.HasError() {
-		t.Fatalf("update diagnostics: %v", response.Diagnostics)
-	}
-	if got, want := captured.Revision, int64(4); got != want {
-		t.Fatalf("rotate revision = %d, want %d", got, want)
-	}
-	if captured.RevokePredecessorImmediately {
-		t.Fatal("normal requested rotation must use the server's bounded predecessor overlap")
-	}
-	var updated componentIntegrationResourceModel
-	assertIntegrationNoDiagnostics(t, response.State.Get(ctx, &updated))
-	if got, want := updated.Secret.ValueString(), "rotated-secret"; got != want {
-		t.Fatalf("rotated secret = %q, want %q", got, want)
-	}
-	if updated.RotationRequired.ValueBool() {
-		t.Fatal("successful rotation must clear rotation_required")
-	}
-}
-
-func TestComponentIntegrationHumanOwnershipRequiresExplicitAdoption(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	current := componentIntegrationTestModel()
-	current.ID = types.StringValue(testIntegrationID)
-	current.Endpoint = types.StringValue("https://pulse.example.test/webhooks/component-integrations/" + testIntegrationID + "/grafana")
-	current.Secret = types.StringNull()
-	current.ObservedVersion = types.StringValue(testIntegrationVersionOne)
-	current.RotationRequired = types.BoolValue(true)
-	current.LifecycleOwner = types.StringValue("human")
-	current.Revision = types.Int64Value(3)
-	current.Status = types.StringValue("active")
-	planned := current
-	planned.RotationTrigger = types.StringValue("2026-09-adopt")
-	planned.Adopt = types.BoolValue(false)
-
-	implementation := &componentIntegrationResource{api: &fakeIntegrationAPI{}}
-	schemaValue := componentIntegrationTestSchema(t, implementation)
-	response := resource.UpdateResponse{State: tfsdk.State{Schema: schemaValue}}
-	implementation.Update(ctx, resource.UpdateRequest{
-		State: componentIntegrationTestState(t, schemaValue, current),
-		Plan:  componentIntegrationTestPlan(t, schemaValue, planned),
-	}, &response)
-	if !response.Diagnostics.HasError() {
-		t.Fatal("human-owned integration update must require adopt=true")
-	}
-}
-
-func TestComponentIntegrationAdoptionTransfersOwnershipAndRotates(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	current := componentIntegrationTestModel()
-	current.ID = types.StringValue(testIntegrationID)
-	current.Endpoint = types.StringValue("https://pulse.example.test/webhooks/component-integrations/" + testIntegrationID + "/grafana")
-	current.Secret = types.StringNull()
-	current.ObservedVersion = types.StringValue(testIntegrationVersionOne)
-	current.RotationRequired = types.BoolValue(true)
-	current.LifecycleOwner = types.StringValue("human")
-	current.Revision = types.Int64Value(3)
-	current.Status = types.StringValue("active")
-	planned := current
-	planned.RotationTrigger = types.StringValue("2026-09-adopt")
-	planned.Adopt = types.BoolValue(true)
-	planned.Secret = types.StringUnknown()
-	planned.ObservedVersion = types.StringUnknown()
-	planned.RotationRequired = types.BoolUnknown()
-	planned.LifecycleOwner = types.StringUnknown()
-	planned.Revision = types.Int64Unknown()
-
-	var captured client.MutationOptions
-	remote := componentIntegrationTestRemote(testIntegrationVersionTwo, 4)
-	implementation := &componentIntegrationResource{api: &fakeIntegrationAPI{
-		adopt: func(_ context.Context, componentID string, options client.MutationOptions) (client.ComponentIntegrationMutation, error) {
-			if componentID != testIntegrationComponentID {
-				t.Fatalf("adopt component ID = %q", componentID)
-			}
-			captured = options
-			return integrationTestMutation(remote, "adopted-secret"), nil
-		},
-	}}
-	schemaValue := componentIntegrationTestSchema(t, implementation)
-	response := resource.UpdateResponse{State: tfsdk.State{Schema: schemaValue}}
-	implementation.Update(ctx, resource.UpdateRequest{
-		State: componentIntegrationTestState(t, schemaValue, current),
-		Plan:  componentIntegrationTestPlan(t, schemaValue, planned),
-	}, &response)
-	if response.Diagnostics.HasError() {
-		t.Fatalf("adopt diagnostics: %v", response.Diagnostics)
-	}
-	if got, want := captured.Revision, int64(3); got != want {
-		t.Fatalf("adopt revision = %d, want %d", got, want)
-	}
-	var adopted componentIntegrationResourceModel
-	assertIntegrationNoDiagnostics(t, response.State.Get(ctx, &adopted))
-	if got, want := adopted.LifecycleOwner.ValueString(), "automation"; got != want {
-		t.Fatalf("lifecycle owner = %q, want %q", got, want)
-	}
-	if got, want := adopted.Secret.ValueString(), "adopted-secret"; got != want {
-		t.Fatalf("adopted secret = %q, want %q", got, want)
-	}
-}
-
-func TestComponentIntegrationDeleteArchivesWithRevision(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	current := componentIntegrationTestModel()
-	current.ID = types.StringValue(testIntegrationID)
-	current.Endpoint = types.StringValue("https://pulse.example.test/webhooks/component-integrations/" + testIntegrationID + "/grafana")
-	current.Secret = types.StringValue("stored-secret")
-	current.ObservedVersion = types.StringValue(testIntegrationVersionOne)
-	current.RotationRequired = types.BoolValue(false)
-	current.LifecycleOwner = types.StringValue("automation")
-	current.Revision = types.Int64Value(12)
-	current.Status = types.StringValue("active")
-
-	var captured client.MutationOptions
-	implementation := &componentIntegrationResource{api: &fakeIntegrationAPI{
-		delete: func(_ context.Context, componentID string, options client.MutationOptions) error {
-			if componentID != testIntegrationComponentID {
-				t.Fatalf("delete component ID = %q", componentID)
-			}
-			captured = options
-			return nil
-		},
-	}}
-	schemaValue := componentIntegrationTestSchema(t, implementation)
-	response := resource.DeleteResponse{State: tfsdk.State{Schema: schemaValue}}
-	implementation.Delete(ctx, resource.DeleteRequest{State: componentIntegrationTestState(t, schemaValue, current)}, &response)
-	if response.Diagnostics.HasError() {
-		t.Fatalf("delete diagnostics: %v", response.Diagnostics)
-	}
-	if got, want := captured.Revision, int64(12); got != want {
-		t.Fatalf("archive revision = %d, want %d", got, want)
-	}
-}
-
-func TestComponentIntegrationDeleteRejectsHumanOwnedIntegration(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	current := componentIntegrationTestModel()
-	current.ID = types.StringValue(testIntegrationID)
-	current.Endpoint = types.StringValue("https://pulse.example.test/webhooks/component-integrations/" + testIntegrationID + "/grafana")
-	current.Secret = types.StringValue("stored-secret")
-	current.ObservedVersion = types.StringValue(testIntegrationVersionOne)
-	current.RotationRequired = types.BoolValue(false)
-	current.LifecycleOwner = types.StringValue("human")
-	current.Revision = types.Int64Value(12)
-	current.Status = types.StringValue("active")
-
-	deleteCalled := false
-	implementation := &componentIntegrationResource{api: &fakeIntegrationAPI{
-		delete: func(context.Context, string, client.MutationOptions) error {
-			deleteCalled = true
-			return nil
-		},
-	}}
-	schemaValue := componentIntegrationTestSchema(t, implementation)
-	response := resource.DeleteResponse{State: tfsdk.State{Schema: schemaValue}}
-	implementation.Delete(ctx, resource.DeleteRequest{State: componentIntegrationTestState(t, schemaValue, current)}, &response)
-	if !response.Diagnostics.HasError() {
-		t.Fatal("human-owned integration archive must require a completed adoption")
-	}
-	if deleteCalled {
-		t.Fatal("provider attempted to archive a human-owned integration")
-	}
-}
-
-func TestComponentIntegrationImportUsesBoundComponentUUID(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	implementation := &componentIntegrationResource{}
-	schemaValue := componentIntegrationTestSchema(t, implementation)
-	response := resource.ImportStateResponse{State: tfsdk.State{
-		Schema: schemaValue,
-		Raw:    tftypes.NewValue(schemaValue.Type().TerraformType(ctx), nil),
-	}}
-	implementation.ImportState(ctx, resource.ImportStateRequest{ID: testIntegrationComponentID}, &response)
+	testSchema := integrationTestSchema(t, implementation)
+	response := resource.ImportStateResponse{State: tfsdk.State{Schema: testSchema, Raw: tftypes.NewValue(testSchema.Type().TerraformType(ctx), nil)}}
+	implementation.ImportState(ctx, resource.ImportStateRequest{ID: integrationTestComponentID + "/pulse"}, &response)
 	if response.Diagnostics.HasError() {
 		t.Fatalf("import diagnostics: %v", response.Diagnostics)
 	}
-	var imported types.String
-	assertIntegrationNoDiagnostics(t, response.State.GetAttribute(ctx, path.Root("component_id"), &imported))
-	if got, want := imported.ValueString(), testIntegrationComponentID; got != want {
-		t.Fatalf("imported component ID = %q, want %q", got, want)
+	var componentID, provider types.String
+	response.State.GetAttribute(ctx, path.Root("component_id"), &componentID)
+	response.State.GetAttribute(ctx, path.Root("integration_provider"), &provider)
+	if componentID.ValueString() != integrationTestComponentID || provider.ValueString() != "pulse" {
+		t.Fatalf("import identity = %q/%q", componentID.ValueString(), provider.ValueString())
 	}
-
-	remote := componentIntegrationTestRemote(testIntegrationVersionOne, 3)
-	implementation.api = &fakeIntegrationAPI{
-		get: func(context.Context, string) (client.ComponentIntegration, error) { return remote, nil },
-	}
-	refreshed := resource.ReadResponse{State: response.State}
-	implementation.Read(ctx, resource.ReadRequest{State: response.State}, &refreshed)
-	if refreshed.Diagnostics.HasError() {
-		t.Fatalf("import refresh diagnostics: %v", refreshed.Diagnostics)
-	}
-	var importedState componentIntegrationResourceModel
-	assertIntegrationNoDiagnostics(t, refreshed.State.Get(ctx, &importedState))
-	if !importedState.Secret.IsNull() || !importedState.RotationRequired.ValueBool() {
-		t.Fatalf("import must require rotation: secret=%#v rotation_required=%#v", importedState.Secret, importedState.RotationRequired)
-	}
-
-	invalid := resource.ImportStateResponse{State: tfsdk.State{
-		Schema: schemaValue,
-		Raw:    tftypes.NewValue(schemaValue.Type().TerraformType(ctx), nil),
-	}}
-	implementation.ImportState(ctx, resource.ImportStateRequest{ID: testIntegrationID + "-invalid"}, &invalid)
+	invalid := resource.ImportStateResponse{State: tfsdk.State{Schema: testSchema, Raw: tftypes.NewValue(testSchema.Type().TerraformType(ctx), nil)}}
+	implementation.ImportState(ctx, resource.ImportStateRequest{ID: integrationTestComponentID}, &invalid)
 	if !invalid.Diagnostics.HasError() {
-		t.Fatal("invalid import UUID must be rejected")
+		t.Fatal("legacy component-only import was accepted")
 	}
 }
 
-func componentIntegrationTestSchema(t *testing.T, implementation *componentIntegrationResource) resourceschema.Schema {
+func TestComponentIntegrationReissuesLostSecretForSameProvider(t *testing.T) {
+	t.Parallel()
+	calls := 0
+	fake := &fakeIntegrationAPI{rotate: func(_ context.Context, _ string, provider client.IntegrationProvider, options client.MutationOptions) (client.ComponentIntegrationMutation, error) {
+		calls++
+		if provider != client.IntegrationProviderPagerDuty || !options.RevokePredecessorImmediately {
+			t.Fatalf("reissue options = provider %q %#v", provider, options)
+		}
+		if calls == 1 {
+			return client.ComponentIntegrationMutation{}, &client.ResponseError{
+				Code: client.ErrorCodeSecretReissueRequired,
+				SecretReissue: &client.SecretReissueMetadata{
+					CredentialVersionID: integrationTestVersion1,
+					Revision:            5,
+				},
+			}
+		}
+		return integrationMutation(provider, integrationTestVersion2, 6), nil
+	}}
+	implementation := &componentIntegrationResource{api: fake}
+	result, err := implementation.reissueSecret(context.Background(), integrationTestComponentID, client.IntegrationProviderPagerDuty, client.SecretReissueMetadata{Revision: 4})
+	if err != nil || calls != 2 || result.Secret == nil {
+		t.Fatalf("reissue result=%#v err=%v calls=%d", result.Integration, err, calls)
+	}
+}
+
+func TestComponentIntegrationDeleteUsesNaturalIdentity(t *testing.T) {
+	t.Parallel()
+	var called bool
+	fake := &fakeIntegrationAPI{delete: func(_ context.Context, componentID string, provider client.IntegrationProvider, options client.MutationOptions) error {
+		called = componentID == integrationTestComponentID && provider == client.IntegrationProviderGrafana && options.Revision == 2
+		return nil
+	}}
+	implementation := &componentIntegrationResource{api: fake}
+	testSchema := integrationTestSchema(t, implementation)
+	state := integrationStateModel("grafana", integrationTestVersion1, 2)
+	response := resource.DeleteResponse{State: tfsdk.State{Schema: testSchema}}
+	implementation.Delete(context.Background(), resource.DeleteRequest{State: integrationTestState(t, testSchema, state)}, &response)
+	if response.Diagnostics.HasError() || !called {
+		t.Fatalf("delete diagnostics=%v called=%v", response.Diagnostics, called)
+	}
+}
+
+func integrationMetadata(provider client.IntegrationProvider, version string, revision int64) client.ComponentIntegration {
+	return client.ComponentIntegration{
+		ComponentID:         integrationTestComponentID,
+		Provider:            provider,
+		Endpoint:            "https://pulse.example.com/webhooks/components/" + integrationTestComponentID + "/" + string(provider),
+		LifecycleOwner:      client.IntegrationLifecycleOwnerAutomation,
+		Status:              client.IntegrationStatusActive,
+		CredentialVersionID: version,
+		Revision:            revision,
+	}
+}
+
+func integrationMutation(provider client.IntegrationProvider, version string, revision int64) client.ComponentIntegrationMutation {
+	return client.ComponentIntegrationMutation{
+		Integration: integrationMetadata(provider, version, revision),
+		Secret:      &client.ComponentIntegrationSecret{Value: "one-time-secret", VersionID: version},
+	}
+}
+
+func integrationTestModel(provider string) componentIntegrationResourceModel {
+	return componentIntegrationResourceModel{
+		ComponentID:         types.StringValue(integrationTestComponentID),
+		IntegrationProvider: types.StringValue(provider),
+		RotationTrigger:     types.StringValue("initial"),
+		Adopt:               types.BoolValue(false),
+		Endpoint:            types.StringUnknown(),
+		Secret:              types.StringUnknown(),
+		Version:             types.StringUnknown(),
+		RotationRequired:    types.BoolUnknown(),
+		LifecycleOwner:      types.StringUnknown(),
+		Revision:            types.Int64Unknown(),
+	}
+}
+
+func integrationStateModel(provider, version string, revision int64) componentIntegrationResourceModel {
+	model := integrationTestModel(provider)
+	model.Endpoint = types.StringValue("https://pulse.example.com/webhooks/components/" + integrationTestComponentID + "/" + provider)
+	model.Secret = types.StringValue("current-secret")
+	model.Version = types.StringValue(version)
+	model.RotationRequired = types.BoolValue(false)
+	model.LifecycleOwner = types.StringValue("automation")
+	model.Revision = types.Int64Value(revision)
+	return model
+}
+
+func integrationTestSchema(t *testing.T, implementation *componentIntegrationResource) schema.Schema {
 	t.Helper()
 	var response resource.SchemaResponse
 	implementation.Schema(context.Background(), resource.SchemaRequest{}, &response)
@@ -621,65 +329,33 @@ func componentIntegrationTestSchema(t *testing.T, implementation *componentInteg
 	return response.Schema
 }
 
-func componentIntegrationTestModel() componentIntegrationResourceModel {
-	return componentIntegrationResourceModel{
-		ID:               types.StringUnknown(),
-		ComponentID:      types.StringValue(testIntegrationComponentID),
-		Source:           types.StringValue(grafanaIntegrationSource),
-		SourceKey:        types.StringValue("example-alert"),
-		RotationTrigger:  types.StringValue("2026-08-initial"),
-		Adopt:            types.BoolValue(false),
-		Endpoint:         types.StringUnknown(),
-		Secret:           types.StringUnknown(),
-		ObservedVersion:  types.StringUnknown(),
-		RotationRequired: types.BoolUnknown(),
-		LifecycleOwner:   types.StringUnknown(),
-		Revision:         types.Int64Unknown(),
-		Status:           types.StringUnknown(),
-	}
-}
-
-func componentIntegrationTestRemote(versionID string, revision int64) client.ComponentIntegration {
-	return client.ComponentIntegration{
-		ID:                  testIntegrationID,
-		ComponentID:         testIntegrationComponentID,
-		Source:              grafanaIntegrationSource,
-		SourceKey:           "example-alert",
-		Endpoint:            "https://pulse.example.test/webhooks/component-integrations/" + testIntegrationID + "/grafana",
-		LifecycleOwner:      client.IntegrationLifecycleOwnerAutomation,
-		Status:              "active",
-		CredentialVersionID: versionID,
-		Revision:            revision,
-	}
-}
-
-func integrationTestMutation(integration client.ComponentIntegration, secret string) client.ComponentIntegrationMutation {
-	return client.ComponentIntegrationMutation{
-		Integration: integration,
-		Secret: &client.ComponentIntegrationSecret{
-			Value:     secret,
-			VersionID: integration.CredentialVersionID,
-		},
-	}
-}
-
-func componentIntegrationTestPlan(t *testing.T, schemaValue resourceschema.Schema, model componentIntegrationResourceModel) tfsdk.Plan {
+func integrationTestConfig(t *testing.T, testSchema schema.Schema, model componentIntegrationResourceModel) tfsdk.Config {
 	t.Helper()
-	result := tfsdk.Plan{Schema: schemaValue}
-	assertIntegrationNoDiagnostics(t, result.Set(context.Background(), &model))
-	return result
+	plan := integrationTestPlan(t, testSchema, model)
+	return tfsdk.Config{Schema: testSchema, Raw: plan.Raw}
 }
 
-func componentIntegrationTestState(t *testing.T, schemaValue resourceschema.Schema, model componentIntegrationResourceModel) tfsdk.State {
+func integrationTestPlan(t *testing.T, testSchema schema.Schema, model componentIntegrationResourceModel) tfsdk.Plan {
 	t.Helper()
-	result := tfsdk.State{Schema: schemaValue}
-	assertIntegrationNoDiagnostics(t, result.Set(context.Background(), &model))
-	return result
+	value := tfsdk.Plan{Schema: testSchema}
+	if diagnostics := value.Set(context.Background(), &model); diagnostics.HasError() {
+		t.Fatalf("set plan: %v", diagnostics)
+	}
+	return value
 }
 
-func assertIntegrationNoDiagnostics(t *testing.T, diagnostics interface {
-	HasError() bool
-}) {
+func integrationTestState(t *testing.T, testSchema schema.Schema, model componentIntegrationResourceModel) tfsdk.State {
+	t.Helper()
+	value := tfsdk.State{Schema: testSchema}
+	if diagnostics := value.Set(context.Background(), &model); diagnostics.HasError() {
+		t.Fatalf("set state: %v", diagnostics)
+	}
+	return value
+}
+
+var _ client.IntegrationAPI = (*fakeIntegrationAPI)(nil)
+
+func assertIntegrationNoDiagnostics(t *testing.T, diagnostics interface{ HasError() bool }) {
 	t.Helper()
 	if diagnostics.HasError() {
 		t.Fatalf("unexpected diagnostics: %v", diagnostics)

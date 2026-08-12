@@ -280,21 +280,18 @@ func TestRollupProtocolConfiguredEmptyReplaceDeleteAndImport(t *testing.T) {
 func TestIntegrationProtocolCreateReadRotateAndArchive(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	path := "/api/automation/v1/components/" + testIntegrationComponentID + "/integration"
-	versionOne := providerProtocolIntegration(testIntegrationVersionOne, 1, client.IntegrationLifecycleOwnerAutomation)
-	versionTwo := providerProtocolIntegration(testIntegrationVersionTwo, 2, client.IntegrationLifecycleOwnerAutomation)
+	path := "/api/automation/v1/components/" + integrationTestComponentID + "/integrations/grafana"
+	versionOne := providerProtocolIntegration(integrationTestVersion1, 1, client.IntegrationLifecycleOwnerAutomation)
+	versionTwo := providerProtocolIntegration(integrationTestVersion2, 2, client.IntegrationLifecycleOwnerAutomation)
 
 	api := newProviderProtocolClient(t,
 		clienttest.Expectation{
-			Method:                http.MethodPost,
+			Method:                http.MethodPut,
 			RequestURI:            path,
 			RequireIdempotencyKey: true,
-			RequestBody: providerProtocolRequestBody(t, client.ComponentIntegrationCreateRequest{
-				Source:    client.IntegrationSourceGrafana,
-				SourceKey: "example-alert",
-			}),
-			StatusCode:   http.StatusCreated,
-			ResponseBody: providerProtocolJSON(t, integrationTestMutation(versionOne, "created-secret")),
+			RequestBody:           providerProtocolRequestBody(t, client.ComponentIntegrationUpsertRequest{}),
+			StatusCode:            http.StatusCreated,
+			ResponseBody:          providerProtocolJSON(t, providerProtocolIntegrationMutation(versionOne, "created-secret")),
 		},
 		clienttest.Expectation{
 			Method:       http.MethodGet,
@@ -307,7 +304,7 @@ func TestIntegrationProtocolCreateReadRotateAndArchive(t *testing.T) {
 			RequireIdempotencyKey: true,
 			IfMatch:               `"1"`,
 			RequestBody:           []byte("{}\n"),
-			ResponseBody:          providerProtocolJSON(t, integrationTestMutation(versionTwo, "rotated-secret")),
+			ResponseBody:          providerProtocolJSON(t, providerProtocolIntegrationMutation(versionTwo, "rotated-secret")),
 		},
 		clienttest.Expectation{
 			Method:                http.MethodDelete,
@@ -318,8 +315,8 @@ func TestIntegrationProtocolCreateReadRotateAndArchive(t *testing.T) {
 		},
 	)
 	implementation := &componentIntegrationResource{api: api}
-	schemaValue := componentIntegrationTestSchema(t, implementation)
-	createPlan := componentIntegrationTestPlan(t, schemaValue, componentIntegrationTestModel())
+	schemaValue := integrationTestSchema(t, implementation)
+	createPlan := integrationTestPlan(t, schemaValue, integrationTestModel("grafana"))
 	createResponse := resource.CreateResponse{State: tfsdk.State{Schema: schemaValue}}
 	implementation.Create(ctx, resource.CreateRequest{Plan: createPlan}, &createResponse)
 	assertIntegrationNoDiagnostics(t, createResponse.Diagnostics)
@@ -336,13 +333,13 @@ func TestIntegrationProtocolCreateReadRotateAndArchive(t *testing.T) {
 	planned := current
 	planned.RotationTrigger = types.StringValue("rotation-2")
 	planned.Secret = types.StringUnknown()
-	planned.ObservedVersion = types.StringUnknown()
+	planned.Version = types.StringUnknown()
 	planned.RotationRequired = types.BoolUnknown()
 	planned.Revision = types.Int64Unknown()
 	updateResponse := resource.UpdateResponse{State: readResponse.State}
 	implementation.Update(ctx, resource.UpdateRequest{
 		State: readResponse.State,
-		Plan:  componentIntegrationTestPlan(t, schemaValue, planned),
+		Plan:  integrationTestPlan(t, schemaValue, planned),
 	}, &updateResponse)
 	assertIntegrationNoDiagnostics(t, updateResponse.Diagnostics)
 	var rotated componentIntegrationResourceModel
@@ -359,9 +356,9 @@ func TestIntegrationProtocolCreateReadRotateAndArchive(t *testing.T) {
 func TestIntegrationProtocolImportAdoptAndArchive(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	path := "/api/automation/v1/components/" + testIntegrationComponentID + "/integration"
-	human := providerProtocolIntegration(testIntegrationVersionOne, 5, client.IntegrationLifecycleOwnerHuman)
-	automation := providerProtocolIntegration(testIntegrationVersionTwo, 6, client.IntegrationLifecycleOwnerAutomation)
+	path := "/api/automation/v1/components/" + integrationTestComponentID + "/integrations/grafana"
+	human := providerProtocolIntegration(integrationTestVersion1, 5, client.IntegrationLifecycleOwnerHuman)
+	automation := providerProtocolIntegration(integrationTestVersion2, 6, client.IntegrationLifecycleOwnerAutomation)
 
 	api := newProviderProtocolClient(t,
 		clienttest.Expectation{
@@ -370,11 +367,12 @@ func TestIntegrationProtocolImportAdoptAndArchive(t *testing.T) {
 			ResponseBody: providerProtocolJSON(t, human),
 		},
 		clienttest.Expectation{
-			Method:                http.MethodPost,
-			RequestURI:            path + "/adopt",
+			Method:                http.MethodPut,
+			RequestURI:            path,
 			RequireIdempotencyKey: true,
 			IfMatch:               `"5"`,
-			ResponseBody:          providerProtocolJSON(t, integrationTestMutation(automation, "adopted-secret")),
+			RequestBody:           []byte("{\"adopt\":true}\n"),
+			ResponseBody:          providerProtocolJSON(t, providerProtocolIntegrationMutation(automation, "adopted-secret")),
 		},
 		clienttest.Expectation{
 			Method:                http.MethodDelete,
@@ -385,12 +383,12 @@ func TestIntegrationProtocolImportAdoptAndArchive(t *testing.T) {
 		},
 	)
 	implementation := &componentIntegrationResource{api: api}
-	schemaValue := componentIntegrationTestSchema(t, implementation)
+	schemaValue := integrationTestSchema(t, implementation)
 	importResponse := resource.ImportStateResponse{State: tfsdk.State{
 		Schema: schemaValue,
 		Raw:    tftypes.NewValue(schemaValue.Type().TerraformType(ctx), nil),
 	}}
-	implementation.ImportState(ctx, resource.ImportStateRequest{ID: testIntegrationComponentID}, &importResponse)
+	implementation.ImportState(ctx, resource.ImportStateRequest{ID: integrationTestComponentID + "/grafana"}, &importResponse)
 	assertIntegrationNoDiagnostics(t, importResponse.Diagnostics)
 
 	readResponse := resource.ReadResponse{State: importResponse.State}
@@ -408,15 +406,14 @@ func TestIntegrationProtocolImportAdoptAndArchive(t *testing.T) {
 	planned.RotationTrigger = types.StringValue("adopt-1")
 	planned.Adopt = types.BoolValue(true)
 	planned.Secret = types.StringUnknown()
-	planned.ObservedVersion = types.StringUnknown()
+	planned.Version = types.StringUnknown()
 	planned.RotationRequired = types.BoolUnknown()
 	planned.LifecycleOwner = types.StringUnknown()
 	planned.Revision = types.Int64Unknown()
-	planned.Status = types.StringUnknown()
 	updateResponse := resource.UpdateResponse{State: readResponse.State}
 	implementation.Update(ctx, resource.UpdateRequest{
 		State: readResponse.State,
-		Plan:  componentIntegrationTestPlan(t, schemaValue, planned),
+		Plan:  integrationTestPlan(t, schemaValue, planned),
 	}, &updateResponse)
 	assertIntegrationNoDiagnostics(t, updateResponse.Diagnostics)
 
@@ -433,22 +430,19 @@ func TestIntegrationProtocolImportAdoptAndArchive(t *testing.T) {
 func TestIntegrationProtocolLostSecretRecoveryAndVersionDrift(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	path := "/api/automation/v1/components/" + testIntegrationComponentID + "/integration"
-	recovered := providerProtocolIntegration(testIntegrationVersionTwo, 2, client.IntegrationLifecycleOwnerAutomation)
+	path := "/api/automation/v1/components/" + integrationTestComponentID + "/integrations/grafana"
+	recovered := providerProtocolIntegration(integrationTestVersion2, 2, client.IntegrationLifecycleOwnerAutomation)
 	driftedVersion := "55555555-5555-4555-8555-555555555555"
 	drifted := providerProtocolIntegration(driftedVersion, 3, client.IntegrationLifecycleOwnerAutomation)
 
 	api := newProviderProtocolClient(t,
 		clienttest.Expectation{
-			Method:                http.MethodPost,
+			Method:                http.MethodPut,
 			RequestURI:            path,
 			RequireIdempotencyKey: true,
-			RequestBody: providerProtocolRequestBody(t, client.ComponentIntegrationCreateRequest{
-				Source:    client.IntegrationSourceGrafana,
-				SourceKey: "example-alert",
-			}),
-			StatusCode:   http.StatusConflict,
-			ResponseBody: clienttest.Fixture(t, "secret-reissue-required.json"),
+			RequestBody:           providerProtocolRequestBody(t, client.ComponentIntegrationUpsertRequest{}),
+			StatusCode:            http.StatusConflict,
+			ResponseBody:          clienttest.Fixture(t, "secret-reissue-required.json"),
 		},
 		clienttest.Expectation{
 			Method:                http.MethodPost,
@@ -456,7 +450,7 @@ func TestIntegrationProtocolLostSecretRecoveryAndVersionDrift(t *testing.T) {
 			RequireIdempotencyKey: true,
 			IfMatch:               `"1"`,
 			RequestBody:           []byte("{\"revoke_predecessor_immediately\":true}\n"),
-			ResponseBody:          providerProtocolJSON(t, integrationTestMutation(recovered, "recovered-secret")),
+			ResponseBody:          providerProtocolJSON(t, providerProtocolIntegrationMutation(recovered, "recovered-secret")),
 		},
 		clienttest.Expectation{
 			Method:       http.MethodGet,
@@ -465,10 +459,10 @@ func TestIntegrationProtocolLostSecretRecoveryAndVersionDrift(t *testing.T) {
 		},
 	)
 	implementation := &componentIntegrationResource{api: api}
-	schemaValue := componentIntegrationTestSchema(t, implementation)
+	schemaValue := integrationTestSchema(t, implementation)
 	createResponse := resource.CreateResponse{State: tfsdk.State{Schema: schemaValue}}
 	implementation.Create(ctx, resource.CreateRequest{
-		Plan: componentIntegrationTestPlan(t, schemaValue, componentIntegrationTestModel()),
+		Plan: integrationTestPlan(t, schemaValue, integrationTestModel("grafana")),
 	}, &createResponse)
 	assertIntegrationNoDiagnostics(t, createResponse.Diagnostics)
 
@@ -482,7 +476,7 @@ func TestIntegrationProtocolLostSecretRecoveryAndVersionDrift(t *testing.T) {
 	if !driftedState.Secret.IsNull() || !driftedState.RotationRequired.ValueBool() {
 		t.Fatalf("drifted secret state = %#v", driftedState)
 	}
-	if got, want := driftedState.ObservedVersion.ValueString(), driftedVersion; got != want {
+	if got, want := driftedState.Version.ValueString(), driftedVersion; got != want {
 		t.Fatalf("drifted observed version = %q, want %q", got, want)
 	}
 }
@@ -494,7 +488,6 @@ func TestDataSourceProtocolWireContract(t *testing.T) {
 	component := client.Component{
 		ID:              componentID,
 		ExternalKey:     "production/platform/example-service",
-		Kind:            client.ComponentKindExternal,
 		Name:            "Example service",
 		ComponentTypeID: "type-service",
 		RelevanceTagIDs: []string{},
@@ -620,15 +613,23 @@ func providerProtocolIntegration(
 	owner client.IntegrationLifecycleOwner,
 ) client.ComponentIntegration {
 	return client.ComponentIntegration{
-		ID:                  testIntegrationID,
-		ComponentID:         testIntegrationComponentID,
-		Source:              client.IntegrationSourceGrafana,
-		SourceKey:           "example-alert",
-		Endpoint:            "https://pulse.example.test/webhooks/component-integrations/" + testIntegrationID + "/grafana",
+		ComponentID:         integrationTestComponentID,
+		Provider:            client.IntegrationProviderGrafana,
+		Endpoint:            "https://pulse.example.test/webhooks/components/" + integrationTestComponentID + "/grafana",
 		LifecycleOwner:      owner,
 		Status:              client.IntegrationStatusActive,
 		CredentialVersionID: versionID,
 		Revision:            revision,
+	}
+}
+
+func providerProtocolIntegrationMutation(integration client.ComponentIntegration, secret string) client.ComponentIntegrationMutation {
+	return client.ComponentIntegrationMutation{
+		Integration: integration,
+		Secret: &client.ComponentIntegrationSecret{
+			Value:     secret,
+			VersionID: integration.CredentialVersionID,
+		},
 	}
 }
 
