@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -14,8 +15,7 @@ import (
 )
 
 const (
-	defaultTimeout       = 30 * time.Second
-	maxErrorResponseBody = 64 * 1024
+	defaultTimeout = 30 * time.Second
 )
 
 // HTTPDoer is the subset of http.Client used by the Pulse client.
@@ -31,34 +31,27 @@ type API interface {
 
 // Config configures a Pulse API client without selecting any API endpoint paths.
 type Config struct {
-	BaseURL    string
-	Token      string
-	UserAgent  string
-	HTTPClient HTTPDoer
+	BaseURL           string
+	Token             string
+	UserAgent         string
+	HTTPClient        HTTPDoer
+	Retry             RetryConfig
+	AllowInsecureHTTP bool
 }
 
 // Client is an authenticated Pulse HTTP client.
 type Client struct {
-	baseURL    *url.URL
-	token      string
-	userAgent  string
-	httpClient HTTPDoer
-}
-
-// ResponseError describes a non-success HTTP response. Error intentionally omits
-// the response body so server output cannot leak into Terraform diagnostics.
-type ResponseError struct {
-	StatusCode int
-	Body       []byte
-}
-
-func (e *ResponseError) Error() string {
-	return fmt.Sprintf("Pulse API returned HTTP status %d", e.StatusCode)
+	baseURL           *url.URL
+	token             string
+	userAgent         string
+	httpClient        HTTPDoer
+	retry             RetryConfig
+	allowInsecureHTTP bool
 }
 
 // New validates configuration and returns an authenticated client.
 func New(config Config) (*Client, error) {
-	baseURL, err := parseBaseURL(config.BaseURL)
+	baseURL, err := parseBaseURL(config.BaseURL, config.AllowInsecureHTTP)
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +68,11 @@ func New(config Config) (*Client, error) {
 
 	httpClient := config.HTTPClient
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: defaultTimeout}
+		httpClient = &http.Client{Timeout: defaultTimeout, CheckRedirect: rejectRedirect}
+	} else if standardClient, ok := httpClient.(*http.Client); ok {
+		clone := *standardClient
+		clone.CheckRedirect = rejectRedirect
+		httpClient = &clone
 	}
 
 	userAgent := config.UserAgent
@@ -83,12 +80,25 @@ func New(config Config) (*Client, error) {
 		userAgent = "terraform-provider-pulse/dev"
 	}
 
+	retry, err := normalizeRetryConfig(config.Retry)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Client{
-		baseURL:    baseURL,
-		token:      config.Token,
-		userAgent:  userAgent,
-		httpClient: httpClient,
+		baseURL:           baseURL,
+		token:             config.Token,
+		userAgent:         userAgent,
+		httpClient:        httpClient,
+		retry:             retry,
+		allowInsecureHTTP: config.AllowInsecureHTTP,
 	}, nil
+}
+
+func rejectRedirect(*http.Request, []*http.Request) error {
+	// The automation bearer credential must never be forwarded to a redirect
+	// target. Pulse API endpoints have canonical, non-redirecting paths.
+	return http.ErrUseLastResponse
 }
 
 // NewRequest creates an authenticated request for a relative Pulse API path.
@@ -124,34 +134,14 @@ func (c *Client) NewRequest(ctx context.Context, method, relativePath string, bo
 	return request, nil
 }
 
-// Do sends a request and optionally decodes a successful JSON response.
+// Do sends a request and optionally decodes a successful JSON response. It may
+// retry read-only requests and mutations carrying an Idempotency-Key. Mutation
+// callers must not rely on HTTP method semantics alone for replay safety.
 func (c *Client) Do(request *http.Request, responseBody any) error {
-	response, err := c.httpClient.Do(request)
-	if err != nil {
-		return fmt.Errorf("send Pulse API request: %w", err)
-	}
-	defer response.Body.Close()
-
-	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		body, readErr := io.ReadAll(io.LimitReader(response.Body, maxErrorResponseBody))
-		if readErr != nil {
-			return fmt.Errorf("read Pulse API error response: %w", readErr)
-		}
-		return &ResponseError{StatusCode: response.StatusCode, Body: body}
-	}
-
-	if responseBody == nil || response.StatusCode == http.StatusNoContent {
-		return nil
-	}
-
-	if err := json.NewDecoder(response.Body).Decode(responseBody); err != nil {
-		return fmt.Errorf("decode Pulse API response: %w", err)
-	}
-
-	return nil
+	return c.doWithRetry(request, responseBody)
 }
 
-func parseBaseURL(raw string) (*url.URL, error) {
+func parseBaseURL(raw string, allowInsecureHTTP bool) (*url.URL, error) {
 	if raw == "" || strings.TrimSpace(raw) == "" {
 		return nil, errors.New("pulse API URL must not be empty")
 	}
@@ -164,7 +154,7 @@ func parseBaseURL(raw string) (*url.URL, error) {
 		return nil, fmt.Errorf("parse Pulse API URL: %w", err)
 	}
 	if parsed.Scheme != "https" && parsed.Scheme != "http" {
-		return nil, errors.New("pulse API URL scheme must be http or https")
+		return nil, errors.New("pulse API URL scheme must be https")
 	}
 	if parsed.Host == "" {
 		return nil, errors.New("pulse API URL must include a host")
@@ -175,9 +165,20 @@ func parseBaseURL(raw string) (*url.URL, error) {
 	if parsed.RawQuery != "" || parsed.Fragment != "" {
 		return nil, errors.New("pulse API URL must not include a query string or fragment")
 	}
+	if parsed.Scheme == "http" && (!allowInsecureHTTP || !isLoopbackHost(parsed.Hostname())) {
+		return nil, errors.New("pulse API URL must use https; insecure HTTP is permitted only for an explicitly enabled loopback development endpoint")
+	}
 
 	parsed.Path = strings.TrimRight(parsed.Path, "/") + "/"
 	return parsed, nil
+}
+
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	address := net.ParseIP(host)
+	return address != nil && address.IsLoopback()
 }
 
 func parseRelativeReference(raw string) (*url.URL, error) {

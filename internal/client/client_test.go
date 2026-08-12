@@ -5,7 +5,9 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -36,6 +38,28 @@ func TestNewRejectsInvalidConfiguration(t *testing.T) {
 				t.Fatal("expected configuration error")
 			}
 		})
+	}
+}
+
+func TestNewRequiresHTTPSExceptExplicitLoopbackDevelopment(t *testing.T) {
+	t.Parallel()
+
+	for name, config := range map[string]Config{
+		"plaintext disabled by default": {BaseURL: "http://127.0.0.1:8080", Token: "token"},
+		"plaintext remote host":         {BaseURL: "http://pulse.example.com", Token: "token", AllowInsecureHTTP: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := New(config); err == nil {
+				t.Fatal("expected insecure Pulse API URL to be rejected")
+			}
+		})
+	}
+
+	for _, baseURL := range []string{"http://localhost:8080", "http://127.0.0.1:8080", "http://[::1]:8080"} {
+		if _, err := New(Config{BaseURL: baseURL, Token: "token", AllowInsecureHTTP: true}); err != nil {
+			t.Fatalf("explicit loopback development URL %q was rejected: %v", baseURL, err)
+		}
 	}
 }
 
@@ -160,5 +184,43 @@ func TestDoReturnsSafeResponseError(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "sensitive server detail") {
 		t.Fatalf("error exposed response body: %v", err)
+	}
+}
+
+func TestClientDoesNotForwardBearerCredentialAcrossRedirect(t *testing.T) {
+	t.Parallel()
+
+	var targetRequests atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		targetRequests.Add(1)
+	}))
+	defer target.Close()
+
+	origin := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		http.Redirect(writer, request, target.URL+"/capture", http.StatusTemporaryRedirect)
+	}))
+	defer origin.Close()
+
+	implementation, err := New(Config{
+		BaseURL:           origin.URL,
+		Token:             "sensitive-token",
+		HTTPClient:        origin.Client(),
+		Retry:             RetryConfig{MaxAttempts: 1},
+		AllowInsecureHTTP: true,
+	})
+	if err != nil {
+		t.Fatalf("create client: %v", err)
+	}
+	request, err := implementation.NewRequest(context.Background(), http.MethodGet, "api/automation/v1/organization", nil)
+	if err != nil {
+		t.Fatalf("create request: %v", err)
+	}
+	err = implementation.Do(request, nil)
+	var responseErr *ResponseError
+	if !errors.As(err, &responseErr) || responseErr.StatusCode != http.StatusTemporaryRedirect {
+		t.Fatalf("error = %v, want redirect response error", err)
+	}
+	if targetRequests.Load() != 0 {
+		t.Fatal("client followed a redirect carrying an automation credential")
 	}
 }

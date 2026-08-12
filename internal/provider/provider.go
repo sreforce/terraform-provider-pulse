@@ -32,8 +32,9 @@ type PulseProvider struct {
 }
 
 type pulseProviderModel struct {
-	APIURL types.String `tfsdk:"api_url"`
-	Token  types.String `tfsdk:"token"`
+	APIURL            types.String `tfsdk:"api_url"`
+	Token             types.String `tfsdk:"token"`
+	AllowInsecureHTTP types.Bool   `tfsdk:"allow_insecure_http"`
 }
 
 // Metadata returns provider type and version metadata.
@@ -47,6 +48,10 @@ func (p *PulseProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp
 	response.Schema = schema.Schema{
 		MarkdownDescription: "The Pulse provider manages organization-scoped Pulse configuration.",
 		Attributes: map[string]schema.Attribute{
+			"allow_insecure_http": schema.BoolAttribute{
+				MarkdownDescription: "Allow plain HTTP only when api_url and returned integration endpoints use a loopback host. Intended exclusively for local development and disabled by default.",
+				Optional:            true,
+			},
 			"api_url": schema.StringAttribute{
 				MarkdownDescription: "Base URL of the Pulse API. May also be set with `PULSE_API_URL`.",
 				Optional:            true,
@@ -89,14 +94,24 @@ func (p *PulseProvider) Configure(ctx context.Context, request provider.Configur
 	response.ResourceData = configuredClient
 }
 
-// Resources intentionally remains empty until stable automation API contracts exist.
+// Resources returns the organization-scoped Pulse configuration resources.
 func (p *PulseProvider) Resources(context.Context) []func() resource.Resource {
-	return nil
+	return []func() resource.Resource{
+		NewComponentResource,
+		NewComponentRollupResource,
+		newComponentIntegrationResource,
+	}
 }
 
-// DataSources intentionally remains empty until stable automation API contracts exist.
+// DataSources returns organization identity, component, and catalog lookups.
 func (p *PulseProvider) DataSources(context.Context) []func() datasource.DataSource {
-	return nil
+	return []func() datasource.DataSource{
+		NewCurrentOrganizationDataSource,
+		NewComponentDataSource,
+		NewComponentTypeDataSource,
+		NewTeamDataSource,
+		NewTagDataSource,
+	}
 }
 
 func resolveConfiguration(data pulseProviderModel, getenv func(string) string) (client.Config, diag.Diagnostics) {
@@ -138,8 +153,18 @@ func resolveConfiguration(data pulseProviderModel, getenv func(string) string) (
 			"Set an organization-scoped automation token in the provider configuration or with "+tokenEnvironmentVariable+".",
 		)
 	}
+	allowInsecureHTTP := false
+	if data.AllowInsecureHTTP.IsUnknown() {
+		diagnostics.AddAttributeError(
+			path.Root("allow_insecure_http"),
+			"Unknown insecure HTTP setting",
+			"allow_insecure_http must be known while configuring the provider.",
+		)
+	} else if !data.AllowInsecureHTTP.IsNull() {
+		allowInsecureHTTP = data.AllowInsecureHTTP.ValueBool()
+	}
 
-	return client.Config{BaseURL: apiURL, Token: token}, diagnostics
+	return client.Config{BaseURL: apiURL, Token: token, AllowInsecureHTTP: allowInsecureHTTP}, diagnostics
 }
 
 // New returns a protocol-compatible provider factory.
