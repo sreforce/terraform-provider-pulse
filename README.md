@@ -3,7 +3,7 @@
 The Pulse provider manages organization-scoped Pulse configuration through Terraform. It is built with the [Terraform Plugin Framework](https://developer.hashicorp.com/terraform/plugin/framework) and uses protocol version 6.
 
 > [!IMPORTANT]
-> The unreleased `0.1.x` line targets Pulse's organization-scoped `/api/automation/v1` contract. Do not point it at Pulse's platform-wide `/api/v1` API or give it a platform internal token.
+> The `0.1.x` line targets Pulse's organization-scoped `/api/automation/v1` contract. Do not point it at Pulse's platform-wide `/api/v1` API or give it a platform internal token.
 
 The initial provider surface manages components, complete rollup definitions, and component-bound Grafana integrations. It also provides read-only lookups for the current organization, components, component types, teams, and tags. Runtime component state is observed but never submitted as desired configuration.
 
