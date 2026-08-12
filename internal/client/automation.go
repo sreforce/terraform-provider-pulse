@@ -39,6 +39,22 @@ func (c *Client) ListComponentTypes(ctx context.Context, options ListOptions) (P
 	return result, err
 }
 
+func (c *Client) CreateComponentType(ctx context.Context, payload ComponentTypeWriteRequest, options MutationOptions) (ComponentType, error) {
+	return createCatalogItem(c, ctx, "component-types", payload, options, validateComponentType)
+}
+
+func (c *Client) GetComponentType(ctx context.Context, id string) (ComponentType, error) {
+	return getCatalogItem(c, ctx, "component-types", id, validateComponentType, func(item ComponentType) string { return item.ID })
+}
+
+func (c *Client) UpdateComponentType(ctx context.Context, id string, payload ComponentTypeWriteRequest, options MutationOptions) (ComponentType, error) {
+	return updateCatalogItem(c, ctx, "component-types", id, payload, options, validateComponentType, func(item ComponentType) string { return item.ID })
+}
+
+func (c *Client) DeleteComponentType(ctx context.Context, id string, options MutationOptions) error {
+	return deleteCatalogItem(c, ctx, "component-types", id, options)
+}
+
 // ListTeams returns one stable cursor page of owner teams.
 func (c *Client) ListTeams(ctx context.Context, options ListOptions) (Page[Team], error) {
 	var result Page[Team]
@@ -52,6 +68,22 @@ func (c *Client) ListTeams(ctx context.Context, options ListOptions) (Page[Team]
 	return result, err
 }
 
+func (c *Client) CreateTeam(ctx context.Context, payload TeamWriteRequest, options MutationOptions) (Team, error) {
+	return createCatalogItem(c, ctx, "teams", payload, options, validateTeam)
+}
+
+func (c *Client) GetTeam(ctx context.Context, id string) (Team, error) {
+	return getCatalogItem(c, ctx, "teams", id, validateTeam, func(item Team) string { return item.ID })
+}
+
+func (c *Client) UpdateTeam(ctx context.Context, id string, payload TeamWriteRequest, options MutationOptions) (Team, error) {
+	return updateCatalogItem(c, ctx, "teams", id, payload, options, validateTeam, func(item Team) string { return item.ID })
+}
+
+func (c *Client) DeleteTeam(ctx context.Context, id string, options MutationOptions) error {
+	return deleteCatalogItem(c, ctx, "teams", id, options)
+}
+
 // ListTags returns one stable cursor page of tags.
 func (c *Client) ListTags(ctx context.Context, options ListOptions) (Page[Tag], error) {
 	var result Page[Tag]
@@ -63,6 +95,89 @@ func (c *Client) ListTags(ctx context.Context, options ListOptions) (Page[Tag], 
 		return Page[Tag]{}, err
 	}
 	return result, err
+}
+
+func (c *Client) CreateTag(ctx context.Context, payload TagWriteRequest, options MutationOptions) (Tag, error) {
+	return createCatalogItem(c, ctx, "tags", payload, options, validateTag)
+}
+
+func (c *Client) GetTag(ctx context.Context, id string) (Tag, error) {
+	return getCatalogItem(c, ctx, "tags", id, validateTag, func(item Tag) string { return item.ID })
+}
+
+func (c *Client) UpdateTag(ctx context.Context, id string, payload TagWriteRequest, options MutationOptions) (Tag, error) {
+	return updateCatalogItem(c, ctx, "tags", id, payload, options, validateTag, func(item Tag) string { return item.ID })
+}
+
+func (c *Client) DeleteTag(ctx context.Context, id string, options MutationOptions) error {
+	return deleteCatalogItem(c, ctx, "tags", id, options)
+}
+
+func createCatalogItem[T any](c *Client, ctx context.Context, collection string, payload any, options MutationOptions, validate func(T) error) (T, error) {
+	var result T
+	if err := requireCreateOptions(options); err != nil {
+		return result, err
+	}
+	err := c.mutate(ctx, http.MethodPost, automationAPIBasePath+"/"+collection, payload, noPrecondition, &result)
+	if err == nil {
+		err = validate(result)
+	}
+	return result, err
+}
+
+func getCatalogItem[T any](c *Client, ctx context.Context, collection string, id string, validate func(T) error, identity func(T) string) (T, error) {
+	var result T
+	path, err := catalogItemPath(collection, id)
+	if err != nil {
+		return result, err
+	}
+	err = c.get(ctx, path, &result)
+	if err == nil {
+		err = validate(result)
+	}
+	if err == nil && identity(result) != id {
+		err = contractError(collection + " read")
+	}
+	return result, err
+}
+
+func updateCatalogItem[T any](c *Client, ctx context.Context, collection string, id string, payload any, options MutationOptions, validate func(T) error, identity func(T) string) (T, error) {
+	var result T
+	path, err := catalogItemPath(collection, id)
+	if err != nil {
+		return result, err
+	}
+	precondition, err := standardRevisionPrecondition(options)
+	if err != nil {
+		return result, err
+	}
+	err = c.mutate(ctx, http.MethodPatch, path, payload, precondition, &result)
+	if err == nil {
+		err = validate(result)
+	}
+	if err == nil && identity(result) != id {
+		err = contractError(collection + " update")
+	}
+	return result, err
+}
+
+func deleteCatalogItem(c *Client, ctx context.Context, collection string, id string, options MutationOptions) error {
+	path, err := catalogItemPath(collection, id)
+	if err != nil {
+		return err
+	}
+	precondition, err := standardRevisionPrecondition(options)
+	if err != nil {
+		return err
+	}
+	return c.mutate(ctx, http.MethodDelete, path, nil, precondition, nil)
+}
+
+func catalogItemPath(collection string, id string) (string, error) {
+	if strings.TrimSpace(id) == "" || strings.ContainsAny(id, "/?#") {
+		return "", errors.New("pulse catalog resource id must be a non-empty UUID")
+	}
+	return automationAPIBasePath + "/" + collection + "/" + url.PathEscape(id), nil
 }
 
 // CreateComponent creates or explicitly restores a component by immutable

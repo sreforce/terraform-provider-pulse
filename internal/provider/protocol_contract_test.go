@@ -49,6 +49,9 @@ func TestTFProtocol6ProviderSchemaAndConfigure(t *testing.T) {
 		"pulse_component",
 		"pulse_component_integration",
 		"pulse_component_rollup",
+		"pulse_component_type",
+		"pulse_tag",
+		"pulse_team",
 	})
 	dataSourceTypes := sortedMapKeys(schemaResponse.DataSourceSchemas)
 	assertStringsEqual(t, dataSourceTypes, []string{
@@ -140,6 +143,9 @@ func TestProviderProtocolConfigureAndSchemaSurface(t *testing.T) {
 		"pulse_component",
 		"pulse_component_integration",
 		"pulse_component_rollup",
+		"pulse_component_type",
+		"pulse_tag",
+		"pulse_team",
 	})
 
 	var dataSourceTypes []string
@@ -512,7 +518,7 @@ func TestDataSourceProtocolWireContract(t *testing.T) {
 			RequestURI: "/api/automation/v1/component-types?limit=200",
 			ResponseBody: providerProtocolJSON(t, client.Page[client.ComponentType]{
 				Items: []client.ComponentType{{
-					ID: "type-service", Name: "Service", GreenLabel: "Operational", YellowLabel: "Degraded", RedLabel: "Major outage", UnknownLabel: "Unknown",
+					ID: "type-service", Name: "Service", GreenLabel: "Operational", YellowLabel: "Degraded", RedLabel: "Major outage", UnknownLabel: "Unknown", Revision: 1,
 				}},
 				NextCursor: "",
 			}),
@@ -521,7 +527,7 @@ func TestDataSourceProtocolWireContract(t *testing.T) {
 			Method:     http.MethodGet,
 			RequestURI: "/api/automation/v1/teams?limit=200",
 			ResponseBody: providerProtocolJSON(t, client.Page[client.Team]{
-				Items:      []client.Team{{ID: "team-platform", Name: "Platform"}},
+				Items:      []client.Team{{ID: "team-platform", Name: "Platform", Revision: 1}},
 				NextCursor: "",
 			}),
 		},
@@ -529,7 +535,7 @@ func TestDataSourceProtocolWireContract(t *testing.T) {
 			Method:     http.MethodGet,
 			RequestURI: "/api/automation/v1/tags?limit=200",
 			ResponseBody: providerProtocolJSON(t, client.Page[client.Tag]{
-				Items:      []client.Tag{{ID: "tag-network", Name: "network", Purpose: "filter", DisplayOrder: 0}},
+				Items:      []client.Tag{{ID: "tag-network", Name: "network", Purpose: "filter", DisplayOrder: 0, Revision: 1}},
 				NextCursor: "",
 			}),
 		},

@@ -279,7 +279,7 @@ func TestCatalogPathsAndDirectEnvelopes(t *testing.T) {
 
 	mock := clienttest.NewServer(t, testToken,
 		clienttest.Expectation{Method: http.MethodGet, RequestURI: "/api/automation/v1/organization", StatusCode: http.StatusOK, ResponseBody: []byte(`{"id":"org-id","name":"Example Organization","slug":"example-org"}`)},
-		clienttest.Expectation{Method: http.MethodGet, RequestURI: "/api/automation/v1/component-types?cursor=a%2B%2F&limit=25", StatusCode: http.StatusOK, ResponseBody: []byte(`{"items":[{"id":"type-id","name":"Service","green_label":"Operational","yellow_label":"Degraded","red_label":"Down","unknown_label":"Unknown"}],"next_cursor":""}`)},
+		clienttest.Expectation{Method: http.MethodGet, RequestURI: "/api/automation/v1/component-types?cursor=a%2B%2F&limit=25", StatusCode: http.StatusOK, ResponseBody: []byte(`{"items":[{"id":"type-id","name":"Service","green_label":"Operational","yellow_label":"Degraded","red_label":"Down","unknown_label":"Unknown","revision":1}],"next_cursor":""}`)},
 	)
 	implementation := newMockClient(t, mock)
 
@@ -290,6 +290,75 @@ func TestCatalogPathsAndDirectEnvelopes(t *testing.T) {
 	page, err := implementation.ListComponentTypes(context.Background(), ListOptions{Cursor: "a+/", Limit: 25})
 	if err != nil || len(page.Items) != 1 || page.Items[0].Name != "Service" || page.NextCursor != "" {
 		t.Fatalf("component type page = %#v err = %v", page, err)
+	}
+}
+
+func TestManagedCatalogCRUDUsesCanonicalPathsAndRevisions(t *testing.T) {
+	t.Parallel()
+	typeID := "00000000-0000-4000-8000-000000000201"
+	teamID := "00000000-0000-4000-8000-000000000202"
+	tagID := "00000000-0000-4000-8000-000000000203"
+	typeBody := []byte("{\"name\":\"Network\",\"green_label\":\"Healthy\",\"yellow_label\":\"Degraded\",\"red_label\":\"Failing\",\"unknown_label\":\"Unknown\"}\n")
+	teamBody := []byte("{\"name\":\"Operations\",\"settings_priority\":10}\n")
+	tagBody := []byte("{\"name\":\"network\",\"purpose\":\"filter\",\"display_label\":null,\"display_order\":10,\"icon\":null}\n")
+	typeResponse := []byte(`{"id":"` + typeID + `","name":"Network","green_label":"Healthy","yellow_label":"Degraded","red_label":"Failing","unknown_label":"Unknown","revision":2}`)
+	teamResponse := []byte(`{"id":"` + teamID + `","name":"Operations","settings_priority":10,"revision":2}`)
+	tagResponse := []byte(`{"id":"` + tagID + `","name":"network","purpose":"filter","display_label":null,"display_order":10,"icon":null,"revision":2}`)
+
+	mock := clienttest.NewServer(t, testToken,
+		clienttest.Expectation{Method: http.MethodPost, RequestURI: "/api/automation/v1/component-types", RequireIdempotencyKey: true, RequestBody: typeBody, StatusCode: http.StatusCreated, ResponseBody: typeResponse},
+		clienttest.Expectation{Method: http.MethodGet, RequestURI: "/api/automation/v1/component-types/" + typeID, StatusCode: http.StatusOK, ResponseBody: typeResponse},
+		clienttest.Expectation{Method: http.MethodPatch, RequestURI: "/api/automation/v1/component-types/" + typeID, RequireIdempotencyKey: true, IfMatch: `"2"`, RequestBody: typeBody, StatusCode: http.StatusOK, ResponseBody: typeResponse},
+		clienttest.Expectation{Method: http.MethodDelete, RequestURI: "/api/automation/v1/component-types/" + typeID, RequireIdempotencyKey: true, IfMatch: `"2"`, StatusCode: http.StatusNoContent},
+		clienttest.Expectation{Method: http.MethodPost, RequestURI: "/api/automation/v1/teams", RequireIdempotencyKey: true, RequestBody: teamBody, StatusCode: http.StatusCreated, ResponseBody: teamResponse},
+		clienttest.Expectation{Method: http.MethodGet, RequestURI: "/api/automation/v1/teams/" + teamID, StatusCode: http.StatusOK, ResponseBody: teamResponse},
+		clienttest.Expectation{Method: http.MethodPatch, RequestURI: "/api/automation/v1/teams/" + teamID, RequireIdempotencyKey: true, IfMatch: `"2"`, RequestBody: teamBody, StatusCode: http.StatusOK, ResponseBody: teamResponse},
+		clienttest.Expectation{Method: http.MethodDelete, RequestURI: "/api/automation/v1/teams/" + teamID, RequireIdempotencyKey: true, IfMatch: `"2"`, StatusCode: http.StatusNoContent},
+		clienttest.Expectation{Method: http.MethodPost, RequestURI: "/api/automation/v1/tags", RequireIdempotencyKey: true, RequestBody: tagBody, StatusCode: http.StatusCreated, ResponseBody: tagResponse},
+		clienttest.Expectation{Method: http.MethodGet, RequestURI: "/api/automation/v1/tags/" + tagID, StatusCode: http.StatusOK, ResponseBody: tagResponse},
+		clienttest.Expectation{Method: http.MethodPatch, RequestURI: "/api/automation/v1/tags/" + tagID, RequireIdempotencyKey: true, IfMatch: `"2"`, RequestBody: tagBody, StatusCode: http.StatusOK, ResponseBody: tagResponse},
+		clienttest.Expectation{Method: http.MethodDelete, RequestURI: "/api/automation/v1/tags/" + tagID, RequireIdempotencyKey: true, IfMatch: `"2"`, StatusCode: http.StatusNoContent},
+	)
+	implementation := newMockClient(t, mock)
+	typeWrite := ComponentTypeWriteRequest{Name: "Network", GreenLabel: "Healthy", YellowLabel: "Degraded", RedLabel: "Failing", UnknownLabel: "Unknown"}
+	teamWrite := TeamWriteRequest{Name: "Operations", SettingsPriority: 10}
+	tagWrite := TagWriteRequest{Name: "network", Purpose: "filter", DisplayOrder: 10}
+
+	if _, err := implementation.CreateComponentType(context.Background(), typeWrite, MutationOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := implementation.GetComponentType(context.Background(), typeID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := implementation.UpdateComponentType(context.Background(), typeID, typeWrite, MutationOptions{Revision: 2}); err != nil {
+		t.Fatal(err)
+	}
+	if err := implementation.DeleteComponentType(context.Background(), typeID, MutationOptions{Revision: 2}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := implementation.CreateTeam(context.Background(), teamWrite, MutationOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := implementation.GetTeam(context.Background(), teamID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := implementation.UpdateTeam(context.Background(), teamID, teamWrite, MutationOptions{Revision: 2}); err != nil {
+		t.Fatal(err)
+	}
+	if err := implementation.DeleteTeam(context.Background(), teamID, MutationOptions{Revision: 2}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := implementation.CreateTag(context.Background(), tagWrite, MutationOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := implementation.GetTag(context.Background(), tagID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := implementation.UpdateTag(context.Background(), tagID, tagWrite, MutationOptions{Revision: 2}); err != nil {
+		t.Fatal(err)
+	}
+	if err := implementation.DeleteTag(context.Background(), tagID, MutationOptions{Revision: 2}); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -307,7 +376,7 @@ func TestListTagsRequiresDisplayOrderButAcceptsExplicitZero(t *testing.T) {
 			Method:       http.MethodGet,
 			RequestURI:   "/api/automation/v1/tags",
 			StatusCode:   http.StatusOK,
-			ResponseBody: []byte(`{"items":[{"id":"tag-id","name":"network","purpose":"filter","display_label":null,"display_order":0,"icon":null}],"next_cursor":""}`),
+			ResponseBody: []byte(`{"items":[{"id":"tag-id","name":"network","purpose":"filter","display_label":null,"display_order":0,"icon":null,"revision":1}],"next_cursor":""}`),
 		},
 	)
 	implementation := newMockClient(t, mock)

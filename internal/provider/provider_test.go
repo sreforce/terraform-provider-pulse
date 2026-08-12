@@ -53,6 +53,9 @@ func TestProviderRegistersInitialContractSurface(t *testing.T) {
 		"pulse_component",
 		"pulse_component_integration",
 		"pulse_component_rollup",
+		"pulse_component_type",
+		"pulse_tag",
+		"pulse_team",
 	})
 
 	var dataSourceTypes []string

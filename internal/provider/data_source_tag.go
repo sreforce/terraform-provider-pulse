@@ -20,6 +20,7 @@ type tagDataSourceModel struct {
 	DisplayLabel types.String `tfsdk:"display_label"`
 	DisplayOrder types.Int64  `tfsdk:"display_order"`
 	Icon         types.String `tfsdk:"icon"`
+	Revision     types.Int64  `tfsdk:"revision"`
 }
 
 func NewTagDataSource() datasource.DataSource {
@@ -67,6 +68,10 @@ func (d *tagDataSource) Schema(
 			},
 			"icon": schema.StringAttribute{
 				MarkdownDescription: "Optional tag icon identifier.",
+				Computed:            true,
+			},
+			"revision": schema.Int64Attribute{
+				MarkdownDescription: "Current tag configuration revision.",
 				Computed:            true,
 			},
 		},
@@ -137,6 +142,7 @@ func (d *tagDataSource) Read(
 	data.DisplayLabel = stringValueOrNull(item.DisplayLabel)
 	data.DisplayOrder = types.Int64Value(item.DisplayOrder)
 	data.Icon = stringValueOrNull(item.Icon)
+	data.Revision = types.Int64Value(item.Revision)
 	response.Diagnostics.Append(response.State.Set(ctx, &data)...)
 }
 

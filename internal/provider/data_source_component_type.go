@@ -20,6 +20,7 @@ type componentTypeDataSourceModel struct {
 	YellowLabel  types.String `tfsdk:"yellow_label"`
 	RedLabel     types.String `tfsdk:"red_label"`
 	UnknownLabel types.String `tfsdk:"unknown_label"`
+	Revision     types.Int64  `tfsdk:"revision"`
 }
 
 func NewComponentTypeDataSource() datasource.DataSource {
@@ -66,6 +67,10 @@ func (d *componentTypeDataSource) Schema(
 			},
 			"unknown_label": schema.StringAttribute{
 				MarkdownDescription: "Label used for unknown component state.",
+				Computed:            true,
+			},
+			"revision": schema.Int64Attribute{
+				MarkdownDescription: "Current component type configuration revision.",
 				Computed:            true,
 			},
 		},
@@ -136,6 +141,7 @@ func (d *componentTypeDataSource) Read(
 	data.YellowLabel = types.StringValue(item.YellowLabel)
 	data.RedLabel = types.StringValue(item.RedLabel)
 	data.UnknownLabel = types.StringValue(item.UnknownLabel)
+	data.Revision = types.Int64Value(item.Revision)
 	response.Diagnostics.Append(response.State.Set(ctx, &data)...)
 }
 

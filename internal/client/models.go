@@ -35,18 +35,47 @@ type ComponentType struct {
 	YellowLabel  string `json:"yellow_label"`
 	RedLabel     string `json:"red_label"`
 	UnknownLabel string `json:"unknown_label"`
+	Revision     int64  `json:"revision"`
+}
+
+// ComponentTypeWriteRequest replaces the complete mutable type definition.
+type ComponentTypeWriteRequest struct {
+	Name         string `json:"name"`
+	GreenLabel   string `json:"green_label"`
+	YellowLabel  string `json:"yellow_label"`
+	RedLabel     string `json:"red_label"`
+	UnknownLabel string `json:"unknown_label"`
 }
 
 // Team is an organization-scoped owner-team catalog entry.
 type Team struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID               string `json:"id"`
+	Name             string `json:"name"`
+	SettingsPriority int64  `json:"settings_priority"`
+	Revision         int64  `json:"revision"`
+}
+
+// TeamWriteRequest replaces mutable team configuration without membership.
+type TeamWriteRequest struct {
+	Name             string `json:"name"`
+	SettingsPriority int64  `json:"settings_priority"`
 }
 
 // Tag is an organization-scoped tag catalog entry. Purpose and name together
 // are the human lookup identity; UUID remains the resource identity.
 type Tag struct {
 	ID           string  `json:"id"`
+	Name         string  `json:"name"`
+	Purpose      string  `json:"purpose"`
+	DisplayLabel *string `json:"display_label"`
+	DisplayOrder int64   `json:"display_order"`
+	Icon         *string `json:"icon"`
+	Revision     int64   `json:"revision"`
+}
+
+// TagWriteRequest replaces the complete tag definition. Purpose is immutable
+// after creation and therefore causes replacement in Terraform.
+type TagWriteRequest struct {
 	Name         string  `json:"name"`
 	Purpose      string  `json:"purpose"`
 	DisplayLabel *string `json:"display_label"`
@@ -64,11 +93,12 @@ func (t *Tag) UnmarshalJSON(data []byte) error {
 		DisplayLabel *string `json:"display_label"`
 		DisplayOrder *int64  `json:"display_order"`
 		Icon         *string `json:"icon"`
+		Revision     *int64  `json:"revision"`
 	}
 	if err := json.Unmarshal(data, &wire); err != nil {
 		return err
 	}
-	if wire.DisplayOrder == nil {
+	if wire.DisplayOrder == nil || wire.Revision == nil {
 		return contractError("tag collection")
 	}
 	*t = Tag{
@@ -78,6 +108,7 @@ func (t *Tag) UnmarshalJSON(data []byte) error {
 		DisplayLabel: wire.DisplayLabel,
 		DisplayOrder: *wire.DisplayOrder,
 		Icon:         wire.Icon,
+		Revision:     *wire.Revision,
 	}
 	return nil
 }
@@ -250,12 +281,24 @@ type MutationOptions struct {
 	RevokePredecessorImmediately bool
 }
 
-// CatalogAPI provides organization identity and read-only reference catalogs.
+// CatalogAPI provides organization identity and managed configuration catalogs.
 type CatalogAPI interface {
 	CurrentOrganization(context.Context) (Organization, error)
 	ListComponentTypes(context.Context, ListOptions) (Page[ComponentType], error)
+	CreateComponentType(context.Context, ComponentTypeWriteRequest, MutationOptions) (ComponentType, error)
+	GetComponentType(context.Context, string) (ComponentType, error)
+	UpdateComponentType(context.Context, string, ComponentTypeWriteRequest, MutationOptions) (ComponentType, error)
+	DeleteComponentType(context.Context, string, MutationOptions) error
 	ListTeams(context.Context, ListOptions) (Page[Team], error)
+	CreateTeam(context.Context, TeamWriteRequest, MutationOptions) (Team, error)
+	GetTeam(context.Context, string) (Team, error)
+	UpdateTeam(context.Context, string, TeamWriteRequest, MutationOptions) (Team, error)
+	DeleteTeam(context.Context, string, MutationOptions) error
 	ListTags(context.Context, ListOptions) (Page[Tag], error)
+	CreateTag(context.Context, TagWriteRequest, MutationOptions) (Tag, error)
+	GetTag(context.Context, string) (Tag, error)
+	UpdateTag(context.Context, string, TagWriteRequest, MutationOptions) (Tag, error)
+	DeleteTag(context.Context, string, MutationOptions) error
 }
 
 // ComponentAPI manages desired component configuration.

@@ -97,6 +97,9 @@ func (p *PulseProvider) Configure(ctx context.Context, request provider.Configur
 // Resources returns the organization-scoped Pulse configuration resources.
 func (p *PulseProvider) Resources(context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
+		NewComponentTypeResource,
+		NewTeamResource,
+		NewTagResource,
 		NewComponentResource,
 		NewComponentRollupResource,
 		newComponentIntegrationResource,

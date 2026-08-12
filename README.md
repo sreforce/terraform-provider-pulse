@@ -3,9 +3,9 @@
 The Pulse provider manages organization-scoped Pulse configuration through Terraform. It is built with the [Terraform Plugin Framework](https://developer.hashicorp.com/terraform/plugin/framework) and uses protocol version 6.
 
 > [!IMPORTANT]
-> The `0.2.x` line targets Pulse's organization-scoped `/api/automation/v1` contract. Do not point it at Pulse's platform-wide `/api/v1` API or give it a platform internal token.
+> The provider targets Pulse's organization-scoped `/api/automation/v1` contract. Do not point it at Pulse's platform-wide `/api/v1` API or give it a platform internal token.
 
-The provider manages components, complete static rollup definitions, and component-bound Grafana, PagerDuty, and Pulse Native ingestion integrations. It also provides read-only lookups for the current organization, components, component types, teams, and tags. Runtime component state is observed but never submitted as desired configuration.
+The provider manages component types, teams, tags, components, complete static rollup definitions, and component-bound Grafana, PagerDuty, and Pulse Native ingestion integrations. It also provides lookups for the current organization and every managed catalog record. Team membership, users, organization lifecycle, governance settings, and operational alert state deliberately remain outside Terraform. Runtime component state is observed but never submitted as desired configuration.
 
 Pulse components do not have separate external and rollup modes. The same component may receive direct signals, own children, and participate in rollup rules at the same time. Dynamic children created by ingestion are server-owned runtime topology: the provider neither enumerates nor adopts them, and they do not create Terraform drift.
 

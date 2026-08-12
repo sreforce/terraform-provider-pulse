@@ -30,27 +30,48 @@ func validateOrganization(value Organization) error {
 
 func validateComponentTypes(page Page[ComponentType]) error {
 	for _, item := range page.Items {
-		if item.ID == "" || item.Name == "" || item.GreenLabel == "" || item.YellowLabel == "" || item.RedLabel == "" || item.UnknownLabel == "" {
+		if err := validateComponentType(item); err != nil {
 			return contractError("component type collection")
 		}
 	}
 	return nil
 }
 
+func validateComponentType(item ComponentType) error {
+	if item.ID == "" || item.Name == "" || item.GreenLabel == "" || item.YellowLabel == "" || item.RedLabel == "" || item.UnknownLabel == "" || item.Revision <= 0 {
+		return contractError("component type")
+	}
+	return nil
+}
+
 func validateTeams(page Page[Team]) error {
 	for _, item := range page.Items {
-		if item.ID == "" || item.Name == "" {
+		if err := validateTeam(item); err != nil {
 			return contractError("team collection")
 		}
 	}
 	return nil
 }
 
+func validateTeam(item Team) error {
+	if item.ID == "" || item.Name == "" || item.Revision <= 0 {
+		return contractError("team")
+	}
+	return nil
+}
+
 func validateTags(page Page[Tag]) error {
 	for _, item := range page.Items {
-		if item.ID == "" || item.Name == "" || (item.Purpose != "relevance" && item.Purpose != "filter") {
+		if err := validateTag(item); err != nil {
 			return contractError("tag collection")
 		}
+	}
+	return nil
+}
+
+func validateTag(item Tag) error {
+	if item.ID == "" || item.Name == "" || (item.Purpose != "relevance" && item.Purpose != "filter") || item.Revision <= 0 {
+		return contractError("tag")
 	}
 	return nil
 }
