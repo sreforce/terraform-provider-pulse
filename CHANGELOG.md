@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1 (2026-08-12)
+
+DOCUMENTATION:
+
+- Replace deployment-specific examples and test fixtures with neutral examples.
+
 ## 0.1.0 (2026-08-12)
 
 FEATURES:
