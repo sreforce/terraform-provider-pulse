@@ -34,5 +34,6 @@ output "service_component_type_id" {
 
 - `green_label` (String) Label used for green component state.
 - `red_label` (String) Label used for red component state.
+- `revision` (Number) Current component type configuration revision.
 - `unknown_label` (String) Label used for unknown component state.
 - `yellow_label` (String) Label used for yellow component state.

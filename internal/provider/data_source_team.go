@@ -14,8 +14,10 @@ type teamDataSource struct {
 }
 
 type teamDataSourceModel struct {
-	ID   types.String `tfsdk:"id"`
-	Name types.String `tfsdk:"name"`
+	ID               types.String `tfsdk:"id"`
+	Name             types.String `tfsdk:"name"`
+	SettingsPriority types.Int64  `tfsdk:"settings_priority"`
+	Revision         types.Int64  `tfsdk:"revision"`
 }
 
 func NewTeamDataSource() datasource.DataSource {
@@ -46,6 +48,14 @@ func (d *teamDataSource) Schema(
 			"name": schema.StringAttribute{
 				MarkdownDescription: "Exact team name. Configure this or `id`.",
 				Optional:            true,
+				Computed:            true,
+			},
+			"settings_priority": schema.Int64Attribute{
+				MarkdownDescription: "Priority used when resolving team-scoped settings.",
+				Computed:            true,
+			},
+			"revision": schema.Int64Attribute{
+				MarkdownDescription: "Current team configuration revision.",
 				Computed:            true,
 			},
 		},
@@ -112,6 +122,8 @@ func (d *teamDataSource) Read(
 
 	data.ID = types.StringValue(item.ID)
 	data.Name = types.StringValue(item.Name)
+	data.SettingsPriority = types.Int64Value(item.SettingsPriority)
+	data.Revision = types.Int64Value(item.Revision)
 	response.Diagnostics.Append(response.State.Set(ctx, &data)...)
 }
 

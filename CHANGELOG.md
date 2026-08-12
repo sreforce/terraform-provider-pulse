@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0 (2026-08-12)
+
+FEATURES:
+
+- Manage organization-scoped component types, teams, and tags with import, optimistic concurrency, and protected deletion.
+- Expose configuration revisions and complete mutable catalog fields through the matching data sources.
+
+SCOPE:
+
+- Keep organizations, users, memberships, BFF APIs, governance settings, and operational alert state outside Terraform.
+
 ## 0.2.2 (2026-08-12)
 
 FIXES:

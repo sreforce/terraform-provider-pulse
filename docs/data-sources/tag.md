@@ -37,3 +37,4 @@ output "network_tag_id" {
 - `display_label` (String) Optional human-readable tag label.
 - `display_order` (Number) Organization-defined display order for this tag.
 - `icon` (String) Optional tag icon identifier.
+- `revision` (Number) Current tag configuration revision.

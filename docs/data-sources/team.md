@@ -29,3 +29,8 @@ output "operations_team_id" {
 
 - `id` (String) Team UUID. Configure this or `name`.
 - `name` (String) Exact team name. Configure this or `id`.
+
+### Read-Only
+
+- `revision` (Number) Current team configuration revision.
+- `settings_priority` (Number) Priority used when resolving team-scoped settings.
