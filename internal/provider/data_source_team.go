@@ -70,7 +70,7 @@ func (d *teamDataSource) ValidateConfig(
 	if response.Diagnostics.HasError() {
 		return
 	}
-	idOrNameSelector(data.ID, data.Name, &response.Diagnostics)
+	validateIDOrNameSelectorConfig(data.ID, data.Name, &response.Diagnostics)
 }
 
 func (d *teamDataSource) Read(
