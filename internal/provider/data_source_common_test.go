@@ -132,9 +132,12 @@ func TestIDOrNameSelectorRequiresExactlyOneSelector(t *testing.T) {
 	}{
 		{name: "id", id: types.StringValue("id-1"), itemName: types.StringNull(), wantValid: true},
 		{name: "name", id: types.StringNull(), itemName: types.StringValue("Service"), wantValid: true},
+		{name: "id with computed name", id: types.StringValue("id-1"), itemName: types.StringUnknown(), wantValid: true},
+		{name: "name with computed id", id: types.StringUnknown(), itemName: types.StringValue("Service"), wantValid: true},
 		{name: "neither", id: types.StringNull(), itemName: types.StringNull()},
 		{name: "both", id: types.StringValue("id-1"), itemName: types.StringValue("Service")},
 		{name: "unknown", id: types.StringUnknown(), itemName: types.StringNull()},
+		{name: "both unknown", id: types.StringUnknown(), itemName: types.StringUnknown()},
 	}
 
 	for _, test := range tests {
@@ -165,6 +168,8 @@ func TestTagSelectorRequiresUUIDOrPurposeNameTuple(t *testing.T) {
 	}{
 		{name: "id", id: types.StringValue("tag-1"), tagName: types.StringNull(), purpose: types.StringNull(), wantValid: true},
 		{name: "tuple", id: types.StringNull(), tagName: types.StringValue("network"), purpose: types.StringValue("filter"), wantValid: true, wantPurpose: "filter"},
+		{name: "id with computed tuple", id: types.StringValue("tag-1"), tagName: types.StringUnknown(), purpose: types.StringUnknown(), wantValid: true},
+		{name: "tuple with computed id", id: types.StringUnknown(), tagName: types.StringValue("network"), purpose: types.StringValue("filter"), wantValid: true, wantPurpose: "filter"},
 		{name: "name only", id: types.StringNull(), tagName: types.StringValue("network"), purpose: types.StringNull()},
 		{name: "purpose only", id: types.StringNull(), tagName: types.StringNull(), purpose: types.StringValue("filter")},
 		{name: "id plus tuple", id: types.StringValue("tag-1"), tagName: types.StringValue("network"), purpose: types.StringValue("filter")},

@@ -114,20 +114,12 @@ func idOrNameSelector(
 	name types.String,
 	diagnostics *diag.Diagnostics,
 ) (catalogSelector, bool) {
-	if id.IsUnknown() || name.IsUnknown() {
-		diagnostics.AddError(
-			"Unknown catalog selector",
-			"The catalog id or name must be known before Pulse can resolve the data source.",
-		)
-		return catalogSelector{}, false
-	}
-
 	idValue := ""
-	if !id.IsNull() {
+	if !id.IsNull() && !id.IsUnknown() {
 		idValue = id.ValueString()
 	}
 	nameValue := ""
-	if !name.IsNull() {
+	if !name.IsNull() && !name.IsUnknown() {
 		nameValue = name.ValueString()
 	}
 	if idValue != strings.TrimSpace(idValue) || nameValue != strings.TrimSpace(nameValue) {
@@ -143,6 +135,23 @@ func idOrNameSelector(
 	}
 	if strings.TrimSpace(nameValue) == "" {
 		nameValue = ""
+	}
+
+	// Selector attributes are Optional+Computed so Terraform represents the
+	// unconfigured, computed counterpart as unknown. A known id or name is
+	// sufficient; only defer when no complete selector is known yet.
+	if idValue != "" && nameValue == "" {
+		return catalogSelector{ID: idValue}, true
+	}
+	if nameValue != "" && idValue == "" {
+		return catalogSelector{Name: nameValue}, true
+	}
+	if id.IsUnknown() || name.IsUnknown() {
+		diagnostics.AddError(
+			"Unknown catalog selector",
+			"The catalog id or name must be known before Pulse can resolve the data source.",
+		)
+		return catalogSelector{}, false
 	}
 
 	if (idValue == "") == (nameValue == "") {
@@ -162,24 +171,16 @@ func tagSelector(
 	purpose types.String,
 	diagnostics *diag.Diagnostics,
 ) (catalogSelector, bool) {
-	if id.IsUnknown() || name.IsUnknown() || purpose.IsUnknown() {
-		diagnostics.AddError(
-			"Unknown tag selector",
-			"The tag id or exact purpose and name must be known before Pulse can resolve the data source.",
-		)
-		return catalogSelector{}, false
-	}
-
 	idValue := ""
-	if !id.IsNull() {
+	if !id.IsNull() && !id.IsUnknown() {
 		idValue = id.ValueString()
 	}
 	nameValue := ""
-	if !name.IsNull() {
+	if !name.IsNull() && !name.IsUnknown() {
 		nameValue = name.ValueString()
 	}
 	purposeValue := ""
-	if !purpose.IsNull() {
+	if !purpose.IsNull() && !purpose.IsUnknown() {
 		purposeValue = purpose.ValueString()
 	}
 	if idValue != strings.TrimSpace(idValue) ||
@@ -213,6 +214,25 @@ func tagSelector(
 		return catalogSelector{ID: idValue}, true
 	}
 
+	if nameValue != "" && purposeValue != "" {
+		if purposeValue != "filter" && purposeValue != "relevance" {
+			diagnostics.AddError(
+				"Invalid tag purpose",
+				"Tag purpose must be exactly \"filter\" or \"relevance\".",
+			)
+			return catalogSelector{}, false
+		}
+		return catalogSelector{Name: nameValue, Purpose: purposeValue}, true
+	}
+
+	if id.IsUnknown() || name.IsUnknown() || purpose.IsUnknown() {
+		diagnostics.AddError(
+			"Unknown tag selector",
+			"The tag id or exact purpose and name must be known before Pulse can resolve the data source.",
+		)
+		return catalogSelector{}, false
+	}
+
 	if nameValue == "" || purposeValue == "" {
 		diagnostics.AddError(
 			"Invalid tag selector",
@@ -220,15 +240,7 @@ func tagSelector(
 		)
 		return catalogSelector{}, false
 	}
-	if purposeValue != "filter" && purposeValue != "relevance" {
-		diagnostics.AddError(
-			"Invalid tag purpose",
-			"Tag purpose must be exactly \"filter\" or \"relevance\".",
-		)
-		return catalogSelector{}, false
-	}
-
-	return catalogSelector{Name: nameValue, Purpose: purposeValue}, true
+	return catalogSelector{}, false
 }
 
 func lookupCatalogItem[T any](

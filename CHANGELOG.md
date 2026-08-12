@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1 (2026-08-12)
+
+FIXES:
+
+- Resolve catalog data sources by a configured selector when Terraform represents the unconfigured Optional+Computed selector as unknown.
+
 ## 0.2.0 (2026-08-12)
 
 BREAKING CHANGES:
