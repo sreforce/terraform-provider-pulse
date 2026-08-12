@@ -155,6 +155,31 @@ func TestIDOrNameSelectorRequiresExactlyOneSelector(t *testing.T) {
 	}
 }
 
+func TestCatalogConfigValidationDefersUnknownSelectors(t *testing.T) {
+	t.Parallel()
+
+	var idOrNameDiagnostics diag.Diagnostics
+	validateIDOrNameSelectorConfig(
+		types.StringUnknown(),
+		types.StringUnknown(),
+		&idOrNameDiagnostics,
+	)
+	if idOrNameDiagnostics.HasError() {
+		t.Fatalf("id/name validation must defer unknown values: %v", idOrNameDiagnostics)
+	}
+
+	var tagDiagnostics diag.Diagnostics
+	validateTagSelectorConfig(
+		types.StringUnknown(),
+		types.StringUnknown(),
+		types.StringUnknown(),
+		&tagDiagnostics,
+	)
+	if tagDiagnostics.HasError() {
+		t.Fatalf("tag validation must defer unknown values: %v", tagDiagnostics)
+	}
+}
+
 func TestTagSelectorRequiresUUIDOrPurposeNameTuple(t *testing.T) {
 	t.Parallel()
 

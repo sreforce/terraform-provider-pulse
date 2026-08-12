@@ -99,6 +99,32 @@ type catalogSelector struct {
 	Purpose string
 }
 
+func validateIDOrNameSelectorConfig(
+	id types.String,
+	name types.String,
+	diagnostics *diag.Diagnostics,
+) {
+	// Terraform validates data-source configuration before all referenced
+	// variables are necessarily known. Defer selector validation until Read in
+	// that case; Read still requires one complete selector.
+	if id.IsUnknown() || name.IsUnknown() {
+		return
+	}
+	idOrNameSelector(id, name, diagnostics)
+}
+
+func validateTagSelectorConfig(
+	id types.String,
+	name types.String,
+	purpose types.String,
+	diagnostics *diag.Diagnostics,
+) {
+	if id.IsUnknown() || name.IsUnknown() || purpose.IsUnknown() {
+		return
+	}
+	tagSelector(id, name, purpose, diagnostics)
+}
+
 func (s catalogSelector) description() string {
 	if s.ID != "" {
 		return fmt.Sprintf("id %q", s.ID)

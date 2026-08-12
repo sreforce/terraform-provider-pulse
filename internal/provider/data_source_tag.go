@@ -91,7 +91,7 @@ func (d *tagDataSource) ValidateConfig(
 	if response.Diagnostics.HasError() {
 		return
 	}
-	tagSelector(data.ID, data.Name, data.Purpose, &response.Diagnostics)
+	validateTagSelectorConfig(data.ID, data.Name, data.Purpose, &response.Diagnostics)
 }
 
 func (d *tagDataSource) Read(
